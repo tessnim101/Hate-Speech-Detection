@@ -1,1 +1,1 @@
-# Hate-Speech-Mini-Project
+# Hate Speech Detection
