@@ -1,0 +1,7 @@
+evaluate
+transformers
+nltk
+pandas
+argostranslate
+tqdm
+openpyxl
