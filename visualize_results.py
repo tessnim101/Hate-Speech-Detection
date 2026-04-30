@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-RUN_ID = "2026-04-30_08-57-41"
+RUN_ID = "2026-04-30_09-45-48"
 
 def load_and_prepare(path, run_id):
     df = pd.read_csv(path)
@@ -84,7 +84,7 @@ def print_summary(df):
 
 
 if __name__ == "__main__":
-    path = "results/results.csv"
+    path = "results/train_results.csv"
     run_id = RUN_ID
 
     df = load_and_prepare(path, run_id)
