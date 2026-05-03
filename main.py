@@ -37,7 +37,7 @@ def format_dataset(dataset, model_type="baseline"):
 def save_train_results(trainer, filepath="results/train_results.csv", extra_info=None):
     logs = trainer.state.log_history
 
-    all_logs = [x for x in logs if "loss" in x or "eval_loss" in x]
+    all_logs = [x for x in logs if "train_loss" in x or "eval_loss" in x]
     df = pd.DataFrame(all_logs)
 
     if extra_info is not None:
@@ -189,16 +189,18 @@ if __name__ == "__main__":
 
     df_train, df_test = load_data(path_data)
 
-    # small CPU-friendly subsets
+    # Baseline model
+    # Small CPU-friendly subsets
     df_train_small = stratified_sample(df_train, 100)
     df_train_split, df_val_split = split_train_validation(df_train_small)
     df_test_small = stratified_sample(df_test, 50)
 
-    #run_baseline(df_train_split, df_val_split, df_test_small, run_id=RUN_ID)
+    run_baseline(df_train_split, df_val_split, df_test_small, run_id=RUN_ID)
 
-    # context experiment
+    # Context-aware model
+    # Small CPU-friendly subset
     df_train_small = stratified_sample(df_train, 80)
     df_train_split, df_val_split = split_train_validation(df_train_small)
     df_test_small = stratified_sample(df_test, 40)
 
-    run_hierarchical(df_train_split, df_val_split, df_test_small, run_id=RUN_ID)
+    #run_hierarchical(df_train_split, df_val_split, df_test_small, run_id=RUN_ID)
