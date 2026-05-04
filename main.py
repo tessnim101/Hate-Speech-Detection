@@ -1,29 +1,93 @@
 """
 Run training
+
+python main.py --dataset_path "data/spanish_subset/" --results_path "results/"
+
 """
 
+import os
+import argparse
+from datetime import datetime
+from pathlib import Path
+
+import torch
+import numpy as np
+import pandas as pd
 from datasets import Dataset
 from transformers import AutoTokenizer
-import pandas as pd
-import os
-from datetime import datetime
 
 from data.loader import load_data
-from data.preprocessing import *
+from data.preprocessing import (
+    split_train_validation,
+    ids_to_text,
+    tokenize_baseline,
+    tokenize_hierarchical,
+)
 from modeling.models import load_model, HierarchicalContextModel
 from training.trainer_utils import build_trainer
 from training.metrics import compute_metrics
 from config import CONFIG
 
 
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--dataset_path",  required=True,  help="Dataset path")
+    p.add_argument("--results_path",  required=True,  help="Output directory")
+    p.add_argument(
+        "--imbalance_strategy",
+        choices=["class_weights", "oversample", "none"],
+        default="class_weights",
+        help=(
+            "How to handle class imbalance. "
+            "'class_weights' passes inverse-frequency loss weights to the model; "
+            "'oversample' upsamples minority classes in the training set; "
+            "'none' does nothing."
+        ),
+    )
+    args = p.parse_args()
+    return args.dataset_path, args.results_path, args.imbalance_strategy
+
+
+# ---------------------------------------------------------------------------
+# Class-imbalance utilities
+# ---------------------------------------------------------------------------
+
+def compute_class_weights(df, label_col="stereotype"):
+    """Return a float tensor of inverse-frequency weights, one per class."""
+    counts  = df[label_col].value_counts().sort_index()
+    freqs   = counts.values.astype(float)
+    weights = 1.0 / freqs
+    weights = weights / weights.sum() * len(weights)   # normalise so mean == 1
+    return torch.tensor(weights, dtype=torch.float)
+
+
+def oversample_minority_classes(df, label_col="stereotype", random_state=42):
+    """
+    Upsample every class to match the majority-class count.
+    Uses simple random sampling with replacement on the minority classes.
+    """
+    max_count = df[label_col].value_counts().max()
+    parts = []
+    for label, group in df.groupby(label_col):
+        if len(group) < max_count:
+            group = group.sample(max_count, replace=True, random_state=random_state)
+        parts.append(group)
+    return pd.concat(parts).sample(frac=1, random_state=random_state).reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
+# Dataset helpers
+# ---------------------------------------------------------------------------
+
 def prepare_dataset(df, columns, label_col="stereotype"):
     df = df[columns + [label_col]].reset_index(drop=True)
     dataset = Dataset.from_pandas(df)
     return dataset.rename_column(label_col, "labels")
 
+
 def format_dataset(dataset, model_type="baseline"):
     columns = {
-        "baseline":     ["input_ids", "attention_mask", "labels"],
+        "baseline": ["input_ids", "attention_mask", "labels"],
         "hierarchical": [
             "root_input_ids",   "root_attention_mask",
             "parent_input_ids", "parent_attention_mask",
@@ -34,85 +98,103 @@ def format_dataset(dataset, model_type="baseline"):
     dataset.set_format(type="torch", columns=columns[model_type])
     return dataset
 
-def save_train_results(trainer, filepath="results/train_results.csv", extra_info=None):
-    logs = trainer.state.log_history
 
+# ---------------------------------------------------------------------------
+# Persistence helpers
+# ---------------------------------------------------------------------------
+
+def save_train_results(trainer, filepath, extra_info=None):
+    """Append training/validation loss logs to a CSV file."""
+    logs     = trainer.state.log_history
     all_logs = [x for x in logs if "train_loss" in x or "eval_loss" in x]
-    df = pd.DataFrame(all_logs)
+    df       = pd.DataFrame(all_logs)
 
     if extra_info is not None:
         for key, value in extra_info.items():
             df[key] = value
 
     file_exists = os.path.isfile(filepath)
+    df.to_csv(filepath, mode="a", header=not file_exists, index=False)
 
-    df.to_csv(
-        filepath,
-        mode="a",
-        header=not file_exists,
-        index=False
-    )
 
-def save_test_results(metrics, filepath="results/test_results.csv"):
+def save_test_results(metrics, filepath):
+    """Append test metrics to a CSV file."""
     df = pd.DataFrame([metrics])
     file_exists = os.path.isfile(filepath)
+    df.to_csv(filepath, mode="a", header=not file_exists, index=False)
 
-    df.to_csv(
-        filepath,
-        mode="a",
-        header=not file_exists,
-        index=False
-    )
 
-def evaluate_on_test(trainer, df_test, tokenizer):
-    test_ds = prepare_dataset(df_test, ["text"])
-    test_ds = tokenize_baseline(test_ds, tokenizer, CONFIG["max_len"])
-    test_ds = format_dataset(test_ds)
+# ---------------------------------------------------------------------------
+# Evaluation helper
+# ---------------------------------------------------------------------------
 
-    metrics = trainer.evaluate(test_ds)
-    return metrics
+def evaluate_on_test(trainer, df_test, tokenizer, model_type="baseline"):
+    """Tokenize and evaluate a test split; supports both model types."""
+    if model_type == "baseline":
+        test_ds = prepare_dataset(df_test, ["text"])
+        test_ds = tokenize_baseline(test_ds, tokenizer, CONFIG["max_len"])
+    elif model_type == "hierarchical":
+        df_test = ids_to_text(df_test)
+        test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
+        test_ds = tokenize_hierarchical(test_ds, tokenizer, CONFIG["max_len"])
+    else:
+        raise ValueError(f"Unknown model_type: {model_type!r}")
 
-def run_baseline(df_train, df_val, df_test, run_id):
+    test_ds = format_dataset(test_ds, model_type)
+    return trainer.evaluate(test_ds)
+
+
+# ---------------------------------------------------------------------------
+# Run functions
+# ---------------------------------------------------------------------------
+
+def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
 
     train_ds = prepare_dataset(df_train, ["text"])
-    val_ds = prepare_dataset(df_val, ["text"])
+    val_ds   = prepare_dataset(df_val,   ["text"])
 
     train_ds = tokenize_baseline(train_ds, tokenizer, CONFIG["max_len"])
-    val_ds = tokenize_baseline(val_ds, tokenizer, CONFIG["max_len"])
+    val_ds   = tokenize_baseline(val_ds,   tokenizer, CONFIG["max_len"])
 
     train_ds = format_dataset(train_ds)
-    val_ds = format_dataset(val_ds)
+    val_ds   = format_dataset(val_ds)
 
     model = load_model(CONFIG["model_name"])
 
-    CONFIG["metrics_fn"] = compute_metrics
-
-    trainer = build_trainer(model, train_ds, val_ds, tokenizer, CONFIG)
-    trainer.train()
-    
-    extra_info = {
-        "run_id": run_id,
-        "model": "baseline",
-        "context": False,
-        "max_len": CONFIG["max_len"]
+    run_config = {
+        **CONFIG,
+        "metrics_fn":    compute_metrics,
+        "class_weights": class_weights,   # None → standard CE loss
     }
+    trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
+    trainer.train()
 
-    save_train_results(trainer, extra_info=extra_info)
+    extra_info = {
+        "run_id":  run_id,
+        "model":   "baseline",
+        "context": False,
+        "max_len": CONFIG["max_len"],
+    }
+    save_train_results(
+        trainer,
+        filepath=Path(res_dir) / "train_results.csv",
+        extra_info=extra_info,
+    )
 
-    test_metrics = evaluate_on_test(trainer, df_test, tokenizer)
-    test_metrics["run_id"] = run_id
-    test_metrics["split"] = "test"
-    test_metrics["model"] = "baseline"
-    save_test_results(test_metrics)
+    test_metrics = evaluate_on_test(trainer, df_test, tokenizer, model_type="baseline")
+    test_metrics.update({"run_id": run_id, "split": "test", "model": "baseline"})
+    save_test_results(test_metrics, filepath=Path(res_dir) / "test_results.csv")
 
-def run_hierarchical(df_train, df_val, df_test, run_id):
+    trainer.save_model(Path(res_dir) / "best_model_baseline")
+    tokenizer.save_pretrained(Path(res_dir) / "best_model_baseline")
 
+
+def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
 
     df_train = ids_to_text(df_train)
     df_val   = ids_to_text(df_val)
-    df_test  = ids_to_text(df_test)
 
     train_ds = prepare_dataset(df_train, ["text", "parent_text", "root_text"])
     val_ds   = prepare_dataset(df_val,   ["text", "parent_text", "root_text"])
@@ -125,82 +207,89 @@ def run_hierarchical(df_train, df_val, df_test, run_id):
 
     model = HierarchicalContextModel(CONFIG["model_name"])
 
-    CONFIG["metrics_fn"] = compute_metrics
-    trainer = build_trainer(model, train_ds, val_ds, tokenizer, CONFIG)
-    trainer.train()
-
-    extra_info = {
-        "run_id": run_id, 
-        "model": "hierarchical", 
-        "context": True
+    run_config = {
+        **CONFIG,
+        "metrics_fn":    compute_metrics,
+        "class_weights": class_weights,
     }
-    
-    save_train_results(trainer, extra_info=extra_info)
-
-    test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
-    test_ds = tokenize_hierarchical(test_ds, tokenizer, CONFIG["max_len"])
-    test_ds = format_dataset(test_ds, "hierarchical")
-
-    test_metrics = trainer.evaluate(test_ds)
-    test_metrics.update({"run_id": run_id, "split": "test", "model": "hierarchical"})
-    save_test_results(test_metrics)
-
-"""def run_context(df_train, df_val, run_id):
-    tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
-
-    df_train = ids_to_text(df_train)
-    df_val = ids_to_text(df_val)
-
-    train_ds = prepare_dataset(df_train, ["text", "parent_text", "root_text"])
-    val_ds = prepare_dataset(df_val, ["text", "parent_text", "root_text"])
-
-    train_ds = tokenize_context(train_ds, tokenizer, CONFIG["max_len_context"])
-    val_ds = tokenize_context(val_ds, tokenizer, CONFIG["max_len_context"])
-
-    train_ds = format_dataset(train_ds)
-    val_ds = format_dataset(val_ds)
-
-    model = load_model(CONFIG["model_name"])
-
-    CONFIG["metrics_fn"] = compute_metrics
-
-    trainer = build_trainer(model, train_ds, val_ds, tokenizer, CONFIG)
+    trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
     trainer.train()
 
     extra_info = {
-        "run_id": run_id,
-        "model": "context",
+        "run_id":  run_id,
+        "model":   "hierarchical",
         "context": True,
-        "max_len": CONFIG["max_len"]
+        "max_len": CONFIG["max_len"],
     }
+    save_train_results(
+        trainer,
+        filepath=Path(res_dir) / "train_results.csv",
+        extra_info=extra_info,
+    )
 
-    save_results(trainer, extra_info=extra_info)
+    test_metrics = evaluate_on_test(trainer, df_test, tokenizer, model_type="hierarchical")
+    test_metrics.update({"run_id": run_id, "split": "test", "model": "hierarchical"})
+    save_test_results(test_metrics, filepath=Path(res_dir) / "test_results.csv")
 
-    test_metrics = evaluate_on_test(trainer, df_test, tokenizer)
-    test_metrics["run_id"] = run_id
-    test_metrics["split"] = "test"
-    save_test_results(test_metrics)"""
+    trainer.save_model(Path(res_dir) / "best_model_context")
+    tokenizer.save_pretrained(Path(res_dir) / "best_model_context")
 
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     RUN_ID = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    path_data = "data/spanish_subset/"
+    DATADIR, RES_DIR, IMBALANCE_STRATEGY = parse_args()
+    os.makedirs(RES_DIR, exist_ok=True)
+    os.makedirs(Path(RES_DIR) / "checkpoints", exist_ok=True)
 
-    df_train, df_test = load_data(path_data)
+    df_train, df_test = load_data(DATADIR)
+    df_train_split, df_val_split = split_train_validation(df_train)
 
-    # Baseline model
-    # Small CPU-friendly subsets
-    df_train_small = stratified_sample(df_train, 100)
-    df_train_split, df_val_split = split_train_validation(df_train_small)
-    df_test_small = stratified_sample(df_test, 50)
+    # ---- class-imbalance handling ----------------------------------------
+    class_weights = None
 
-    run_baseline(df_train_split, df_val_split, df_test_small, run_id=RUN_ID)
+    if IMBALANCE_STRATEGY == "oversample":
+        print("[imbalance] Oversampling minority classes in training set.")
+        df_train_split = oversample_minority_classes(df_train_split)
 
-    # Context-aware model
-    # Small CPU-friendly subset
-    df_train_small = stratified_sample(df_train, 80)
-    df_train_split, df_val_split = split_train_validation(df_train_small)
-    df_test_small = stratified_sample(df_test, 40)
+    elif IMBALANCE_STRATEGY == "class_weights":
+        print("[imbalance] Computing inverse-frequency class weights.")
+        # Compute weights from the training split so val/test are untouched.
+        class_weights = compute_class_weights(df_train_split)
+        print(f"            weights → {class_weights.tolist()}")
 
-    #run_hierarchical(df_train_split, df_val_split, df_test_small, run_id=RUN_ID)
+    # ---- GPU setup -------------------------------------------------------
+    n_gpus = torch.cuda.device_count()
+    if n_gpus == 0:
+        print("[device] No CUDA devices found — running on CPU.")
+    else:
+        print(f"[device] {n_gpus} GPU(s) detected: "
+              + ", ".join(torch.cuda.get_device_name(i) for i in range(n_gpus)))
+
+    # TrainingArguments picks up CUDA automatically via the Trainer.
+    # For multi-GPU runs launch with:
+    #   torchrun --nproc_per_node=<N_GPUS> train.py ...
+    # Recommended GPU-specific CONFIG keys to set:
+    #   "fp16": True                        # mixed-precision training
+    #   "per_device_train_batch_size": 32   # scale up from CPU default
+    #   "per_device_eval_batch_size":  64
+    #   "dataloader_num_workers": 4         # parallel data loading
+
+    # ---- Baseline --------------------------------------------------------
+    run_baseline(
+        df_train_split, df_val_split, df_test,
+        run_id=RUN_ID,
+        res_dir=RES_DIR,
+        class_weights=class_weights,
+    )
+
+    # ---- Hierarchical ----------------------------------------------------
+    run_hierarchical(
+        df_train_split, df_val_split, df_test,
+        run_id=RUN_ID,
+        res_dir=RES_DIR,
+        class_weights=class_weights,
+    )

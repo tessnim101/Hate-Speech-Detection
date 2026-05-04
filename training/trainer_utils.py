@@ -2,16 +2,50 @@
 Build trainer
 """
 
+import torch
+import torch.nn as nn
 from transformers import Trainer, TrainingArguments, DefaultDataCollator
 from modeling.models import HierarchicalContextModel
+
+
+class WeightedLossTrainer(Trainer):
+    """
+    Trainer subclass that applies class weights to the cross-entropy loss.
+
+    The base Trainer.compute_loss() uses the loss returned by the model's
+    forward() pass, which is unweighted. We recompute it here with the
+    supplied weights so the minority classes contribute more to the gradient.
+
+    Weights should be a 1-D float tensor of length num_labels, already on CPU
+    (they are moved to the correct device inside compute_loss).
+    """
+
+    def __init__(self, *args, class_weights: torch.Tensor, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_weights = class_weights
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+
+        logits = outputs.logits
+        loss_fn = nn.CrossEntropyLoss(
+            weight=self.class_weights.to(logits.device)
+        )
+        loss = loss_fn(logits, labels)
+
+        # Re-attach labels so downstream metrics callbacks still see them
+        inputs["labels"] = labels
+
+        return (loss, outputs) if return_outputs else loss
 
 
 def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
     args = TrainingArguments(
         output_dir=config.get("output_dir", "checkpoints"),
         num_train_epochs=config.get("epochs", 3),
-        per_device_train_batch_size=config.get("batch_size", 16),
-        per_device_eval_batch_size=config.get("batch_size", 16),
+        per_device_train_batch_size=config.get("per_device_train_batch_size", 16),
+        per_device_eval_batch_size=config.get("per_device_eval_batch_size", 16),
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
@@ -21,15 +55,12 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         report_to="none",
     )
 
-    # HierarchicalContextModel needs custom column forwarding
-    """if isinstance(model, HierarchicalContextModel):
-        remove_cols = ["root_text", "parent_text", "text"] if "text" in (train_ds.column_names or []) else []
-    else:
-        remove_cols = []"""
-
     collator = DefaultDataCollator() if isinstance(model, HierarchicalContextModel) else None
 
-    return Trainer(
+    class_weights = config.get("class_weights")  # None when no imbalance strategy
+
+    trainer_cls  = WeightedLossTrainer if class_weights is not None else Trainer
+    trainer_kwargs = dict(
         model=model,
         args=args,
         train_dataset=train_ds,
@@ -38,3 +69,7 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         data_collator=collator,
         compute_metrics=config.get("metrics_fn"),
     )
+    if class_weights is not None:
+        trainer_kwargs["class_weights"] = class_weights
+
+    return trainer_cls(**trainer_kwargs)
