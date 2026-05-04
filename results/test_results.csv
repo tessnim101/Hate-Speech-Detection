@@ -1,0 +1,2 @@
+eval_loss,eval_accuracy,eval_f1_macro,eval_f1_binary,eval_f1_class0,eval_f1_class1,eval_runtime,eval_samples_per_second,eval_steps_per_second,epoch,run_id,split,model
+1.834163784980774,0.7845149253731343,0.7490491753439235,0.6547085201793722,0.8433898305084746,0.6547085201793722,2.4075,445.274,27.83,15.0,2026-05-04_12-22-15,test,baseline

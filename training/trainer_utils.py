@@ -28,7 +28,9 @@ class WeightedLossTrainer(Trainer):
         labels = inputs.pop("labels")
         outputs = model(**inputs)
 
-        logits = outputs.logits
+        # HierarchicalContextModel returns a dict; standard models return a ModelOutput
+        logits = outputs["logits"] if isinstance(outputs, dict) else outputs.logits
+
         loss_fn = nn.CrossEntropyLoss(
             weight=self.class_weights.to(logits.device)
         )
@@ -65,9 +67,10 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         args=args,
         train_dataset=train_ds,
         eval_dataset=val_ds,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=collator,
         compute_metrics=config.get("metrics_fn"),
+        callbacks=config.get("callbacks")
     )
     if class_weights is not None:
         trainer_kwargs["class_weights"] = class_weights

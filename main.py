@@ -1,7 +1,7 @@
 """
 Run training
 
-python main.py --dataset_path "data/spanish_subset/" --results_path "results/"
+python main.py --dataset_path "data/spanish_subset/" --results_path "results/" --imbalance_strategy "class_weights"
 
 """
 
@@ -28,6 +28,32 @@ from training.trainer_utils import build_trainer
 from training.metrics import compute_metrics
 from config import CONFIG
 
+
+from transformers import TrainerCallback
+
+class EpochMetricsCallback(TrainerCallback):
+    """
+    Collects a single merged row per epoch containing both training
+    and validation metrics, so they can be saved together.
+
+    The Trainer fires on_log multiple times per epoch (once per
+    logging_steps for train, once at eval time for val). This callback
+    accumulates those separately and merges them at epoch end.
+    """
+    def __init__(self):
+        self.records = []
+        self._pending = {}
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is None:
+            return
+        # Accumulate into the pending row for this epoch
+        self._pending.update({k: v for k, v in logs.items() if k != "total_flos"})
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        row = {"epoch": state.epoch, **self._pending}
+        self.records.append(row)
+        self._pending = {}
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -103,16 +129,12 @@ def format_dataset(dataset, model_type="baseline"):
 # Persistence helpers
 # ---------------------------------------------------------------------------
 
-def save_train_results(trainer, filepath, extra_info=None):
-    """Append training/validation loss logs to a CSV file."""
-    logs     = trainer.state.log_history
-    all_logs = [x for x in logs if "train_loss" in x or "eval_loss" in x]
-    df       = pd.DataFrame(all_logs)
-
+def save_train_results(records, filepath, extra_info=None):
+    """Append per-epoch train+val metric records to a CSV file."""
+    df = pd.DataFrame(records)
     if extra_info is not None:
         for key, value in extra_info.items():
             df[key] = value
-
     file_exists = os.path.isfile(filepath)
     df.to_csv(filepath, mode="a", header=not file_exists, index=False)
 
@@ -149,6 +171,8 @@ def evaluate_on_test(trainer, df_test, tokenizer, model_type="baseline"):
 # ---------------------------------------------------------------------------
 
 def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
+    metrics_cb = EpochMetricsCallback()
+
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
 
     train_ds = prepare_dataset(df_train, ["text"])
@@ -166,6 +190,8 @@ def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None)
         **CONFIG,
         "metrics_fn":    compute_metrics,
         "class_weights": class_weights,   # None → standard CE loss
+        "output_dir":    str(Path(res_dir) / "checkpoints"),
+        "callbacks": [metrics_cb]
     }
     trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
     trainer.train()
@@ -177,7 +203,7 @@ def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None)
         "max_len": CONFIG["max_len"],
     }
     save_train_results(
-        trainer,
+        metrics_cb.records,
         filepath=Path(res_dir) / "train_results.csv",
         extra_info=extra_info,
     )
@@ -191,6 +217,8 @@ def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None)
 
 
 def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
+    metrics_cb = EpochMetricsCallback()
+
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
 
     df_train = ids_to_text(df_train)
@@ -211,6 +239,8 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
         **CONFIG,
         "metrics_fn":    compute_metrics,
         "class_weights": class_weights,
+        "output_dir":    str(Path(res_dir) / "checkpoints"),
+        "callbacks": [metrics_cb],
     }
     trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
     trainer.train()
@@ -222,7 +252,7 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
         "max_len": CONFIG["max_len"],
     }
     save_train_results(
-        trainer,
+        metrics_cb.records,
         filepath=Path(res_dir) / "train_results.csv",
         extra_info=extra_info,
     )
@@ -279,12 +309,12 @@ if __name__ == "__main__":
     #   "dataloader_num_workers": 4         # parallel data loading
 
     # ---- Baseline --------------------------------------------------------
-    run_baseline(
+    """run_baseline(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID,
         res_dir=RES_DIR,
         class_weights=class_weights,
-    )
+    )"""
 
     # ---- Hierarchical ----------------------------------------------------
     run_hierarchical(
