@@ -50,6 +50,7 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         per_device_eval_batch_size=config.get("per_device_eval_batch_size", 16),
         eval_strategy="epoch",
         save_strategy="epoch",
+        save_total_limit=1,
         load_best_model_at_end=True,
         metric_for_best_model="eval_f1_macro",
         logging_steps=50,

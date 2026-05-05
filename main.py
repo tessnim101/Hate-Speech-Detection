@@ -9,12 +9,12 @@ import os
 import argparse
 from datetime import datetime
 from pathlib import Path
-
 import torch
 import numpy as np
 import pandas as pd
 from datasets import Dataset
 from transformers import AutoTokenizer
+import shutil
 
 from data.loader import load_data
 from data.preprocessing import (
@@ -211,10 +211,9 @@ def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None)
     test_metrics = evaluate_on_test(trainer, df_test, tokenizer, model_type="baseline")
     test_metrics.update({"run_id": run_id, "split": "test", "model": "baseline"})
     save_test_results(test_metrics, filepath=Path(res_dir) / "test_results.csv")
-
     trainer.save_model(Path(res_dir) / "best_model_baseline")
     tokenizer.save_pretrained(Path(res_dir) / "best_model_baseline")
-
+    shutil.rmtree(Path(res_dir) / "checkpoints", ignore_errors=True)
 
 def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
     metrics_cb = EpochMetricsCallback()
@@ -260,9 +259,9 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
     test_metrics = evaluate_on_test(trainer, df_test, tokenizer, model_type="hierarchical")
     test_metrics.update({"run_id": run_id, "split": "test", "model": "hierarchical"})
     save_test_results(test_metrics, filepath=Path(res_dir) / "test_results.csv")
-
     trainer.save_model(Path(res_dir) / "best_model_context")
     tokenizer.save_pretrained(Path(res_dir) / "best_model_context")
+    shutil.rmtree(Path(res_dir) / "checkpoints", ignore_errors=True)
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -309,12 +308,12 @@ if __name__ == "__main__":
     #   "dataloader_num_workers": 4         # parallel data loading
 
     # ---- Baseline --------------------------------------------------------
-    """run_baseline(
+    run_baseline(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID,
         res_dir=RES_DIR,
         class_weights=class_weights,
-    )"""
+    )
 
     # ---- Hierarchical ----------------------------------------------------
     run_hierarchical(

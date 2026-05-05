@@ -9,7 +9,7 @@ CONFIG = {
     "train_bs": 16,
     "eval_bs": 16,
     "lr": 2e-5,
-    "epochs": 10,
+    "epochs": 12,
     "output_dir": "./results",
     "log_dir": "./logs",
 }
