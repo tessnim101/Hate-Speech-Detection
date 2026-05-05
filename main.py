@@ -13,7 +13,7 @@ import torch
 import numpy as np
 import pandas as pd
 from datasets import Dataset
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, EarlyStoppingCallback
 import shutil
 
 from data.loader import load_data
@@ -30,6 +30,21 @@ from config import CONFIG
 
 
 from transformers import TrainerCallback
+
+class UnfreezeEncoderCallback(TrainerCallback):
+    """Freezes the shared encoder for epoch 1, unfreezes from epoch 2 onward."""
+    
+    def on_train_begin(self, args, state, control, model=None, **kwargs):
+        if hasattr(model, "encoder"):
+            for param in model.encoder.parameters():
+                param.requires_grad = False
+            print("[callback] Encoder frozen for epoch 1.")
+
+    def on_epoch_begin(self, args, state, control, model=None, **kwargs):
+        if state.epoch >= 1 and hasattr(model, "encoder"):
+            for param in model.encoder.parameters():
+                param.requires_grad = True
+            print(f"[callback] Encoder unfrozen at epoch {state.epoch}.")
 
 class EpochMetricsCallback(TrainerCallback):
     """
@@ -236,10 +251,11 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
 
     run_config = {
         **CONFIG,
+        "learning_rate": 1e-5, # lower than baseline
         "metrics_fn":    compute_metrics,
         "class_weights": class_weights,
         "output_dir":    str(Path(res_dir) / "checkpoints"),
-        "callbacks": [metrics_cb],
+        "callbacks": [metrics_cb, UnfreezeEncoderCallback(), EarlyStoppingCallback(early_stopping_patience=3)],
     }
     trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
     trainer.train()
@@ -308,12 +324,12 @@ if __name__ == "__main__":
     #   "dataloader_num_workers": 4         # parallel data loading
 
     # ---- Baseline --------------------------------------------------------
-    run_baseline(
+    """run_baseline(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID,
         res_dir=RES_DIR,
         class_weights=class_weights,
-    )
+    )"""
 
     # ---- Hierarchical ----------------------------------------------------
     run_hierarchical(

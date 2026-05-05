@@ -45,7 +45,7 @@ class HierarchicalContextModel(nn.Module):
     def encode(self, input_ids, attention_mask):
         """Return [CLS] token representation for a batch of texts."""
         output = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        return output.last_hidden_state[:, 0, :]  # (B, H)
+        return output.pooler_output  # (B, H)
 
     def forward(
         self,
@@ -83,4 +83,4 @@ class HierarchicalContextModel(nn.Module):
             loss = nn.CrossEntropyLoss()(logits, labels)
 
         # Return a dict so HuggingFace Trainer works out of the box
-        return {"loss": loss, "logits": logits} if loss is not None else {"logits": logits}
+        return {"logits": logits}

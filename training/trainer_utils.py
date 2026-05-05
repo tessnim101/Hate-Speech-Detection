@@ -46,6 +46,7 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
     args = TrainingArguments(
         output_dir=config.get("output_dir", "checkpoints"),
         num_train_epochs=config.get("epochs", 3),
+        learning_rate=config.get("learning_rate", 2e-5),
         per_device_train_batch_size=config.get("per_device_train_batch_size", 16),
         per_device_eval_batch_size=config.get("per_device_eval_batch_size", 16),
         eval_strategy="epoch",
@@ -60,9 +61,14 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
 
     collator = DefaultDataCollator() if isinstance(model, HierarchicalContextModel) else None
 
-    class_weights = config.get("class_weights")  # None when no imbalance strategy
+    class_weights = config.get("class_weights")
+    is_hierarchical = isinstance(model, HierarchicalContextModel)
 
-    trainer_cls  = WeightedLossTrainer if class_weights is not None else Trainer
+    # Use WeightedLossTrainer if we have class weights OR if the model
+    # doesn't return its own loss (hierarchical model)
+    use_custom_trainer = class_weights is not None or is_hierarchical
+
+    trainer_cls = WeightedLossTrainer if use_custom_trainer else Trainer
     trainer_kwargs = dict(
         model=model,
         args=args,
@@ -71,9 +77,14 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         processing_class=tokenizer,
         data_collator=collator,
         compute_metrics=config.get("metrics_fn"),
-        callbacks=config.get("callbacks")
+        callbacks=config.get("callbacks"),
     )
-    if class_weights is not None:
+    if use_custom_trainer:
+        # If no class weights, pass uniform weights so WeightedLossTrainer
+        # still works but behaves identically to standard CE loss
+        if class_weights is None:
+            num_labels = config.get("num_labels", 2)
+            class_weights = torch.ones(num_labels)
         trainer_kwargs["class_weights"] = class_weights
 
     return trainer_cls(**trainer_kwargs)
