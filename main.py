@@ -255,7 +255,7 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
         "metrics_fn":    compute_metrics,
         "class_weights": class_weights,
         "output_dir":    str(Path(res_dir) / "checkpoints"),
-        "callbacks": [metrics_cb, UnfreezeEncoderCallback(), EarlyStoppingCallback(early_stopping_patience=3)],
+        "callbacks": [metrics_cb, UnfreezeEncoderCallback(), EarlyStoppingCallback(early_stopping_patience=5)],
     }
     trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
     trainer.train()
