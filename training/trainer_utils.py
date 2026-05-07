@@ -51,7 +51,7 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         per_device_eval_batch_size=config.get("per_device_eval_batch_size", 16),
         eval_strategy="epoch",
         save_strategy="epoch",
-        save_total_limit=1,
+        save_total_limit=2,
         #max_grad_norm=1.0,
         warmup_ratio=0.1,
         load_best_model_at_end=True,

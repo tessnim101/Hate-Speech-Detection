@@ -260,6 +260,9 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
     trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
     trainer.train()
 
+    print(f"Best checkpoint: {trainer.state.best_model_checkpoint}")
+    print(f"Best metric:     {trainer.state.best_metric}")
+
     extra_info = {
         "run_id":  run_id,
         "model":   "hierarchical",
@@ -332,9 +335,9 @@ if __name__ == "__main__":
     )"""
 
     # ---- Hierarchical ----------------------------------------------------
-    run_hierarchical(
+    """run_hierarchical(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID,
         res_dir=RES_DIR,
         class_weights=class_weights,
-    )
+    )"""

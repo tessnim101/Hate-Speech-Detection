@@ -9,9 +9,9 @@ CONFIG = {
     "train_bs": 16,
     "eval_bs": 16,
     "lr": 2e-5,
-    "warmup_ratio": 0.1,
+    #"warmup_ratio": 0.1,
     "weight_decay": 0.01,
-    "epochs": 10,
+    "epochs": 5,
     "output_dir": "./results",
     "log_dir": "./logs",
 }
