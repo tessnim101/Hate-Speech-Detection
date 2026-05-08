@@ -1,5 +1,5 @@
 """
-Load model
+Load pre-trained model and define custom models
 """
 
 import torch
@@ -8,6 +8,9 @@ from transformers import AutoModel, AutoModelForSequenceClassification
 
 
 def load_model(model_name: str, num_labels: int = 2):
+    """
+    Load pre-trained model.
+    """
     return AutoModelForSequenceClassification.from_pretrained(
         model_name, num_labels=num_labels
     )
@@ -66,6 +69,12 @@ class HierarchicalContextModel(nn.Module):
         pos_emb = self.position_embeddings(positions).unsqueeze(0)  # (1, 3, H)
 
         thread = torch.stack([root_cls, parent_cls, tweet_cls], dim=1) + pos_emb
+
+        # Sequences with only special tokens ([CLS] + [SEP]) have attention_mask sum == 2
+        root_empty   = (root_attention_mask.sum(dim=1)   <= 2)
+        parent_empty = (parent_attention_mask.sum(dim=1) <= 2)
+        tweet_empty  = torch.zeros(root_empty.shape[0], dtype=torch.bool, device=root_cls.device)
+        key_padding_mask = torch.stack([root_empty, parent_empty, tweet_empty], dim=1)
 
         # Tweet (last position) attends to the full thread
         attn_out, _ = self.thread_attention(
