@@ -22,14 +22,14 @@ class HierarchicalContextModel(nn.Module):
     then combines their [CLS] representations via multi-head attention before classification.
     """
 
-    def __init__(self, model_name: str, num_labels: int = 2, dropout: float = 0.05):
+    def __init__(self, model_name: str, num_labels: int = 2, dropout: float = 0.1):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(model_name)
         hidden = self.encoder.config.hidden_size  # 768 for XLM-RoBERTa base
 
         self.thread_attention = nn.MultiheadAttention(
             embed_dim=hidden,
-            num_heads=4,
+            num_heads=8,
             dropout=dropout,
             batch_first=True,
         )
@@ -81,6 +81,7 @@ class HierarchicalContextModel(nn.Module):
             query=thread[:, 2:, :],   # tweet CLS as query  (B, 1, H)
             key=thread,               # full thread as keys  (B, 3, H)
             value=thread,             # full thread as vals  (B, 3, H)
+            key_padding_mask=key_padding_mask,
         )
         # attn_out: (B, 1, H) — tweet representation enriched by thread context
         pooled = attn_out.squeeze(1)  # (B, H)

@@ -25,7 +25,7 @@ from sklearn.metrics import (
 )
  
 from data.loader import load_data
-from data.preprocessing import ids_to_text
+from data.preprocessing import ids_to_text, filter_contextual_tweets
 from modeling.models import HierarchicalContextModel
 from config import CONFIG
  
@@ -181,6 +181,7 @@ def main():
  
     # ---- Load test data --------------------------------------------------
     _, df_test = load_data(args.dataset_path)
+    df_test  = filter_contextual_tweets(df_test)
  
     if "implicit" not in df_test.columns:
         raise ValueError(

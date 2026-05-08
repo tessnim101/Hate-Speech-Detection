@@ -1,10 +1,27 @@
 """
-Pre-process data, that is replace parent and root tweet id by actual textual tweet
-Also reduce size of training and testing data if training on CPU
+Pre-process data
 """
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
+
+
+def filter_contextual_tweets(df):
+    """
+    Keep only tweets that have both a parent and a root tweet.
+
+    Tweets without context (level2 == 0 or level3 == 0) are dropped so that
+    the baseline and hierarchical models are evaluated on the same population.
+    This makes the comparison fair: any performance difference reflects whether
+    context helps, not data heterogeneity.
+    """
+    before = len(df)
+    df = df[(df["level2"] != "0") & (df["level3"] != "0")].reset_index(drop=True)
+    after = len(df)
+    print(f"[filter] Kept {after:,} / {before:,} tweets with full context "
+          f"({before - after:,} dropped).")
+    return df
+
 
 def stratified_sample(df, n):
     """
@@ -14,6 +31,7 @@ def stratified_sample(df, n):
     for _, group in df.groupby('stereotype'):
         groups.append(group.sample(min(len(group), n // 2), random_state=42))
     return pd.concat(groups).reset_index(drop=True)
+
 
 def split_train_validation(df, val_size=0.2):
     """
@@ -25,12 +43,14 @@ def split_train_validation(df, val_size=0.2):
         stratify=df["stereotype"],
         random_state=42
     )
-
     return train_df.reset_index(drop=True), val_df.reset_index(drop=True)
+
 
 def ids_to_text(df):
     """
-    Replace parent and root tweet ids by actual textual tweet
+    Replace parent and root tweet ids by actual textual tweet.
+    After filter_contextual_tweets(), level2 and level3 are always valid ids,
+    so no empty-string fallback is needed — but fillna("") is kept as a safety net.
     """
     id_to_text = df[['comment_id', 'text']].rename(
         columns={'comment_id': 'lookup_id', 'text': 'lookup_text'}
@@ -51,9 +71,10 @@ def ids_to_text(df):
     ).rename(columns={'lookup_text': 'root_text'}).drop(columns=['lookup_id'])
 
     df['parent_text'] = df['parent_text'].fillna("")
-    df['root_text'] = df['root_text'].fillna("")
+    df['root_text']   = df['root_text'].fillna("")
 
     return df
+
 
 def tokenize_baseline(dataset, tokenizer, max_len):
     """
@@ -66,13 +87,27 @@ def tokenize_baseline(dataset, tokenizer, max_len):
             padding="max_length",
             max_length=max_len
         )
-
     return dataset.map(tokenize, batched=True)
+
+
+def tokenize_early_fusion(dataset, tokenizer, max_len):
+    """
+    Tokenizes pre-formatted prompt strings for the early fusion model
+    """
+    def tokenize_fn(batch):
+        return tokenizer(
+            batch["prompt"],
+            padding="max_length",
+            truncation=True,
+            max_length=max_len,
+        )
+    return dataset.map(tokenize_fn, batched=True)
+
 
 def tokenize_hierarchical(dataset, tokenizer, max_len: int):
     """
-    Tokenizer for the hierarchical model (context-aware)
-    Tokenizes root, parent, and tweet independently
+    Tokenizer for the hierarchical model (context-aware).
+    Tokenizes root, parent, and tweet independently.
     """
     def tokenize(example):
         def enc(texts):
@@ -87,7 +122,6 @@ def tokenize_hierarchical(dataset, tokenizer, max_len: int):
         parent = enc(example["parent_text"])
         tweet  = enc(example["text"])
 
-        # Return tokens ids and attention mask
         return {
             "root_input_ids":        root["input_ids"],
             "root_attention_mask":   root["attention_mask"],
@@ -98,23 +132,3 @@ def tokenize_hierarchical(dataset, tokenizer, max_len: int):
         }
 
     return dataset.map(tokenize, batched=True)
-
-"""def tokenize_context(dataset, tokenizer, max_len):
-    def tokenize(example):
-        combined = [
-            r + " </s> " + p + " </s> " + t
-            for r, p, t in zip(
-                example["root_text"],
-                example["parent_text"],
-                example["text"]
-            )
-        ]
-
-        return tokenizer(
-            combined,
-            truncation=True,
-            padding="max_length",
-            max_length=max_len
-        )
-
-    return dataset.map(tokenize, batched=True)"""
