@@ -22,7 +22,7 @@ class HierarchicalContextModel(nn.Module):
     then combines their [CLS] representations via multi-head attention before classification.
     """
 
-    def __init__(self, model_name: str, num_labels: int = 2, dropout: float = 0.1):
+    def __init__(self, model_name: str, num_labels: int = 2, dropout: float = 0.05):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(model_name)
         hidden = self.encoder.config.hidden_size  # 768 for XLM-RoBERTa base

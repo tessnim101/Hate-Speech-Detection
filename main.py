@@ -222,7 +222,7 @@ def save_hierarchical_model(trainer, tokenizer, save_dir):
     save_dir.mkdir(parents=True, exist_ok=True)
     save_file(trainer.model.state_dict(), save_dir / "model.safetensors")
     tokenizer.save_pretrained(save_dir)
-    hconfig = {"model_name": CONFIG["model_name"], "num_labels": 2, "dropout": 0.1}
+    hconfig = {"model_name": CONFIG["model_name"], "num_labels": 2, "dropout": 0.05}
     with open(save_dir / "hierarchical_config.json", "w") as f:
         json.dump(hconfig, f, indent=2)
 
@@ -282,7 +282,7 @@ def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None)
         "metrics_fn":     compute_metrics,
         "class_weights":  class_weights,
         "output_dir":     str(Path(res_dir) / "checkpoints"),
-        "callbacks":      [metrics_cb, EarlyStoppingCallback(early_stopping_patience=3)],
+        "callbacks":      [metrics_cb, EarlyStoppingCallback(early_stopping_patience=4)],
     }
     trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
     trainer.train()
@@ -414,7 +414,7 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
         "metrics_fn":     compute_metrics,
         "class_weights":  class_weights,
         "output_dir":     str(Path(res_dir) / "checkpoints"),
-        "callbacks":      [metrics_cb, EarlyStoppingCallback(early_stopping_patience=5)],
+        "callbacks":      [metrics_cb, EarlyStoppingCallback(early_stopping_patience=4)],
     }
     trainer = build_trainer(model, train_ds, val_ds, tokenizer, run_config)
     trainer.train()
@@ -489,7 +489,7 @@ if __name__ == "__main__":
         )"""
 
     # ---- Hierarchical (late-fusion, for reference) -----------------------
-    """run_hierarchical(
+    run_hierarchical(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
-    )"""
+    )
