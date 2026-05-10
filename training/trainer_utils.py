@@ -5,6 +5,7 @@ Build trainer
 import torch
 import torch.nn as nn
 from transformers import Trainer, TrainingArguments, DefaultDataCollator
+from sklearn.metrics import f1_score, accuracy_score
 from modeling.models import HierarchicalContextModel
 
 
@@ -40,6 +41,19 @@ class WeightedLossTrainer(Trainer):
         inputs["labels"] = labels
 
         return (loss, outputs) if return_outputs else loss
+
+
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    preds = logits.argmax(axis=1)
+
+    return {
+        "accuracy": accuracy_score(labels, preds),
+        "f1_macro": f1_score(labels, preds, average="macro"),
+        "f1_binary": f1_score(labels, preds),
+        "f1_class0": f1_score(labels, preds, pos_label=0),
+        "f1_class1": f1_score(labels, preds, pos_label=1),
+    }
 
 
 def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
