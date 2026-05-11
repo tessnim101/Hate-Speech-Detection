@@ -46,7 +46,9 @@ class HierarchicalContextModel(nn.Module):
         )
 
     def encode(self, input_ids, attention_mask):
-        """Return [CLS] token representation for a batch of texts."""
+        """
+        Return [CLS] token representation for a batch of texts.
+        """
         output = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
         return output.last_hidden_state[:, 0, :]
 
@@ -60,9 +62,9 @@ class HierarchicalContextModel(nn.Module):
         tweet_attention_mask,
         labels=None,
     ):
-        root_cls   = self.encode(root_input_ids,   root_attention_mask)    # (B, H)
-        parent_cls = self.encode(parent_input_ids, parent_attention_mask)  # (B, H)
-        tweet_cls  = self.encode(tweet_input_ids,  tweet_attention_mask)   # (B, H)
+        root_cls   = self.encode(root_input_ids,   root_attention_mask) # (B, H)
+        parent_cls = self.encode(parent_input_ids, parent_attention_mask)  
+        tweet_cls  = self.encode(tweet_input_ids,  tweet_attention_mask) 
 
         # Stack into a sequence of 3 "thread tokens": (B, 3, H)
         positions = torch.arange(3, device=root_cls.device)
@@ -70,20 +72,12 @@ class HierarchicalContextModel(nn.Module):
 
         thread = torch.stack([root_cls, parent_cls, tweet_cls], dim=1) + pos_emb
 
-        # Sequences with only special tokens ([CLS] + [SEP]) have attention_mask sum == 2
-        root_empty   = (root_attention_mask.sum(dim=1)   <= 2)
-        parent_empty = (parent_attention_mask.sum(dim=1) <= 2)
-        tweet_empty  = torch.zeros(root_empty.shape[0], dtype=torch.bool, device=root_cls.device)
-        key_padding_mask = torch.stack([root_empty, parent_empty, tweet_empty], dim=1)
-
-        # Tweet (last position) attends to the full thread
         attn_out, _ = self.thread_attention(
-            query=thread[:, 2:, :],   # tweet CLS as query  (B, 1, H)
-            key=thread,               # full thread as keys  (B, 3, H)
-            value=thread,             # full thread as vals  (B, 3, H)
-            key_padding_mask=key_padding_mask,
+            query=thread[:, 2:, :], # tweet CLS as query  (B, 1, H)
+            key=thread, # full thread as keys  (B, 3, H)
+            value=thread, # full thread as vals  (B, 3, H)
         )
-        # attn_out: (B, 1, H) — tweet representation enriched by thread context
+        # attn_out: (B, 1, H), tweet representation enriched by thread context
         pooled = attn_out.squeeze(1)  # (B, H)
 
         logits = self.classifier(pooled)
@@ -92,5 +86,5 @@ class HierarchicalContextModel(nn.Module):
         if labels is not None:
             loss = nn.CrossEntropyLoss()(logits, labels)
 
-        # Return a dict so HuggingFace Trainer works out of the box
+        # Return a dict for HuggingFace Trainer compatibility.
         return {"logits": logits}

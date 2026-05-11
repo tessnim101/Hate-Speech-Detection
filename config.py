@@ -1,5 +1,5 @@
 """
-Training configuration
+Training configuration.
 """
 
 CONFIG = {

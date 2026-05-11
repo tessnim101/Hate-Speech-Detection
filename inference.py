@@ -1,12 +1,16 @@
 """
 Inference and analysis script.
 
-Evaluates baseline and context-aware models on the test set.
+Evaluates baseline and context-aware models on the test set and compares
+their predictions sample-by-sample. Designed to be run once per training
+seed so that results accumulate in inference_summary.csv for multi-run
+statistical analysis (see visualize_results.py).
 
 python inference.py --dataset_path  "data/spanish_subset/" \
                     --baseline_path "results/best_model_baseline" \
                     --context_path  "results/best_model_context" \
-                    --results_path  "results/"
+                    --results_path  "results/" \
+                    --run_id        "0"
 """
 
 import argparse
@@ -42,7 +46,8 @@ def parse_args():
     p.add_argument("--context_path",  required=True, help="Path to best_model_context/")
     p.add_argument("--results_path",  required=True, help="Directory to write CSVs")
     p.add_argument("--batch_size",    type=int, default=32)
-    p.add_argument("--run_id",        type=str, default="0", help="Seed/run identifier for aggregation")
+    p.add_argument("--run_id",        type=str, default="0",
+                   help="Seed/run identifier — used as a key when aggregating across runs")
     return p.parse_args()
 
 
@@ -51,16 +56,36 @@ def parse_args():
 # ---------------------------------------------------------------------------
 
 def get_device():
+    """
+    Return a CUDA device if available, otherwise CPU.
+    """
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def batch_texts(texts, batch_size):
+    """
+    Yield successive slices of texts of length batch_size.
+    """
     for i in range(0, len(texts), batch_size):
         yield texts[i : i + batch_size]
 
 
 @torch.no_grad()
 def predict_baseline(model, tokenizer, texts, batch_size, device):
+    """
+    Run batched inference with the baseline AutoModelForSequenceClassification.
+
+    Args:
+        model: Loaded baseline model in eval mode.
+        tokenizer: Matching tokenizer.
+        texts: List of raw tweet strings.
+        batch_size: Number of samples per forward pass.
+        device: torch.device to run inference on.
+
+    Returns:
+        preds: Integer array of shape (N,) with predicted class indices.
+        probs: Float array of shape (N, num_classes) with softmax probabilities.
+    """
     model.eval()
     all_preds, all_probs = [], []
 
@@ -85,6 +110,23 @@ def predict_baseline(model, tokenizer, texts, batch_size, device):
 
 @torch.no_grad()
 def predict_hierarchical(model, tokenizer, df, batch_size, device):
+    """
+    Run batched inference with the hierarchical context-aware model.
+
+    Each batch tokenizes tweet, parent, and root texts independently and passes
+    them as separate inputs, matching the forward() signature of HierarchicalContextModel.
+
+    Args:
+        model: Loaded HierarchicalContextModel in eval mode.
+        tokenizer: Matching tokenizer.
+        df: DataFrame with "text", "parent_text", and "root_text" columns.
+        batch_size: Number of samples per forward pass.
+        device: torch.device to run inference on.
+
+    Returns:
+        preds: Integer array of shape (N,) with predicted class indices.
+        probs: Float array of shape (N, num_classes) with softmax probabilities.
+    """
     model.eval()
     all_preds, all_probs = [], []
 
@@ -98,6 +140,9 @@ def predict_hierarchical(model, tokenizer, df, batch_size, device):
         r_batch = root_texts[i   : i + batch_size]
 
         def enc(batch):
+            """
+            Tokenize a single text batch and move to device.
+            """
             return tokenizer(
                 batch,
                 padding=True,
@@ -134,6 +179,16 @@ def predict_hierarchical(model, tokenizer, df, batch_size, device):
 # ---------------------------------------------------------------------------
 
 def compute_metrics(labels, preds):
+    """
+    Compute a standard set of classification metrics.
+
+    Args:
+        labels: Ground-truth integer array.
+        preds: Predicted integer array.
+
+    Returns:
+        Dict of metric name → scalar value.
+    """
     return {
         "accuracy":  accuracy_score(labels, preds),
         "f1_macro":  f1_score(labels, preds, average="macro",  zero_division=0),
@@ -151,12 +206,18 @@ def compute_metrics(labels, preds):
 # ---------------------------------------------------------------------------
 
 def print_section(title):
+    """
+    Print a section header to stdout for readability.
+    """
     print(f"\n{'='*60}")
     print(f"  {title}")
     print(f"{'='*60}")
 
 
 def print_metrics(metrics: dict):
+    """
+    Pretty-print a metrics dict, formatting floats to 4 decimal places.
+    """
     for k, v in metrics.items():
         print(f"  {k:<25} {v:.4f}" if isinstance(v, float) else f"  {k:<25} {v}")
 
@@ -170,7 +231,8 @@ def main():
     device = get_device()
     print(f"[device] Using {device}")
 
-    # ---- Load test data --------------------------------------------------
+    # ---- Load and filter test data ---------------------------------------
+    # Drop rows without parent/root context to remain consistent with training
     _, df_test = load_data(args.dataset_path)
     df_test    = filter_contextual_tweets(df_test)
     labels     = df_test["stereotype"].values
@@ -220,14 +282,18 @@ def main():
         print(f"  {k:<25} {delta:+.4f}")
 
     # ---- Per-sample results ----------------------------------------------
+    # verdict column classifies each sample into one of three outcomes:
+    #   context_wins — context model correct, baseline wrong
+    #   baseline_wins — baseline correct, context model wrong
+    #   tie — both models agree (right or wrong)
     df_results = df_test[["text", "stereotype"]].copy()
-    df_results["baseline_pred"]    = baseline_preds
-    df_results["baseline_prob1"]   = baseline_probs[:, 1]
-    df_results["context_pred"]     = context_preds
-    df_results["context_prob1"]    = context_probs[:, 1]
+    df_results["baseline_pred"] = baseline_preds
+    df_results["baseline_prob1"] = baseline_probs[:, 1]  
+    df_results["context_pred"] = context_preds
+    df_results["context_prob1"] = context_probs[:, 1]
     df_results["baseline_correct"] = (baseline_preds == labels).astype(int)
-    df_results["context_correct"]  = (context_preds  == labels).astype(int)
-    df_results["verdict"]          = "tie"
+    df_results["context_correct"] = (context_preds  == labels).astype(int)
+    df_results["verdict"] = "tie"
     df_results.loc[
         (df_results["context_correct"] == 1) & (df_results["baseline_correct"] == 0),
         "verdict"
@@ -244,17 +310,16 @@ def main():
     res_dir = Path(args.results_path)
     res_dir.mkdir(parents=True, exist_ok=True)
 
-    # Per-sample CSV
+    # Full per-sample predictions (useful for error analysis)
     per_sample_path = res_dir / "inference_per_sample.csv"
     df_results.to_csv(per_sample_path, index=False)
     print(f"\n[saved] Per-sample results → {per_sample_path}")
 
-    # Summary CSV — one row per model per run, designed for multi-seed aggregation
     rows = [
         {"run_id": args.run_id, "model": "baseline", **baseline_metrics},
         {"run_id": args.run_id, "model": "context",  **context_metrics},
     ]
-    summary_df  = pd.DataFrame(rows)
+    summary_df   = pd.DataFrame(rows)
     summary_path = res_dir / "inference_summary.csv"
     file_exists  = summary_path.exists()
     summary_df.to_csv(summary_path, mode="a", header=not file_exists, index=False)

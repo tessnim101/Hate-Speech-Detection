@@ -1,7 +1,9 @@
 """
+Run training for both the baseline and the hierearchical (context-aware) model.
+
 python main.py \
-    --dataset_path       "data/spanish_subset/" \
-    --results_path       "results/" \
+    --dataset_path "data/spanish_subset/" \
+    --results_path "results/" \
     --imbalance_strategy "oversample"
 """
 
@@ -19,6 +21,10 @@ from training.runners import run_baseline, run_hierarchical
 
 
 def parse_args():
+    """
+    Parse path to dataset, path to results folder and imbalance
+    strategy (oversample or class weights, see utils/imbalance.py)
+    """
     p = argparse.ArgumentParser()
     p.add_argument("--dataset_path",  required=True)
     p.add_argument("--results_path",  required=True)
@@ -39,6 +45,7 @@ if __name__ == "__main__":
     os.makedirs(Path(RES_DIR) / "checkpoints", exist_ok=True)
 
     df_train, df_test = load_data(DATADIR)
+    # Keep only tweets that have both parent and root tweets
     df_train = filter_contextual_tweets(df_train)
     df_test  = filter_contextual_tweets(df_test)
     df_train_split, df_val_split = split_train_validation(df_train)

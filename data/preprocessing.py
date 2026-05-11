@@ -12,8 +12,6 @@ def filter_contextual_tweets(df):
 
     Tweets without context (level2 == 0 or level3 == 0) are dropped so that
     the baseline and hierarchical models are evaluated on the same population.
-    This makes the comparison fair: any performance difference reflects whether
-    context helps, not data heterogeneity.
     """
     before = len(df)
     df = df[(df["level2"] != "0") & (df["level3"] != "0")].reset_index(drop=True)
@@ -33,7 +31,7 @@ def stratified_sample(df, n):
     return pd.concat(groups).reset_index(drop=True)
 
 
-def split_train_validation(df, val_size=0.2):
+def split_train_validation(df, val_size=0.15):
     """
     Split training data into training and evaluation
     """
@@ -49,8 +47,6 @@ def split_train_validation(df, val_size=0.2):
 def ids_to_text(df):
     """
     Replace parent and root tweet ids by actual textual tweet.
-    After filter_contextual_tweets(), level2 and level3 are always valid ids,
-    so no empty-string fallback is needed — but fillna("") is kept as a safety net.
     """
     id_to_text = df[['comment_id', 'text']].rename(
         columns={'comment_id': 'lookup_id', 'text': 'lookup_text'}
@@ -88,20 +84,6 @@ def tokenize_baseline(dataset, tokenizer, max_len):
             max_length=max_len
         )
     return dataset.map(tokenize, batched=True)
-
-
-def tokenize_early_fusion(dataset, tokenizer, max_len):
-    """
-    Tokenizes pre-formatted prompt strings for the early fusion model
-    """
-    def tokenize_fn(batch):
-        return tokenizer(
-            batch["prompt"],
-            padding="max_length",
-            truncation=True,
-            max_length=max_len,
-        )
-    return dataset.map(tokenize_fn, batched=True)
 
 
 def tokenize_hierarchical(dataset, tokenizer, max_len: int):

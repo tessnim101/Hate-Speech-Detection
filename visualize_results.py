@@ -56,6 +56,9 @@ plt.rcParams.update({
 # ---------------------------------------------------------------------------
 
 def parse_args():
+    """
+    Parse path to results foler and path to output folder.
+    """
     p = argparse.ArgumentParser()
     p.add_argument("--results_path", required=True, help="Path to inference_summary.csv")
     p.add_argument("--output_path",  required=True, help="Directory to save figures")
@@ -67,7 +70,9 @@ def parse_args():
 # ---------------------------------------------------------------------------
 
 def compute_summary(df):
-    """Mean and std per model per metric."""
+    """
+    Mean and std per model per metric.
+    """
     return df.groupby("model")[METRICS].agg(["mean", "std"]).round(4)
 
 
@@ -98,7 +103,9 @@ def paired_ttests(df):
 # ---------------------------------------------------------------------------
 
 def plot_bar_with_ci(df, ax, metric):
-    """Grouped bar chart with ± 1 std error bars for one metric."""
+    """
+    Grouped bar chart with ± 1 std error bars for one metric.
+    """
     summary = df.groupby("model")[metric].agg(["mean", "std"])
     models  = ["baseline", "context"]
     x       = np.arange(len(models))
@@ -125,7 +132,9 @@ def plot_bar_with_ci(df, ax, metric):
 
 
 def plot_run_lines(df, ax, metric):
-    """Connected scatter: one line per run showing baseline → context."""
+    """
+    Connected scatter: one line per run showing baseline → context.
+    """
     runs = sorted(df["run"].unique())
     for run in runs:
         base_val = df[(df["model"] == "baseline") & (df["run"] == run)][metric].values[0]
@@ -146,7 +155,9 @@ def plot_run_lines(df, ax, metric):
 
 
 def plot_delta_distribution(df, ax, metric):
-    """Per-run delta (context − baseline) as a strip + mean line."""
+    """
+    Per-run delta (context − baseline) as a strip + mean line.
+    """
     runs   = sorted(df["run"].unique())
     deltas = []
     for run in runs:
@@ -169,7 +180,9 @@ def plot_delta_distribution(df, ax, metric):
 
 
 def plot_stat_table(ttest_df, ax):
-    """Render the t-test results as a clean table."""
+    """
+    Render the t-test results as a clean table.
+    """
     ax.axis("off")
     col_labels = ["Metric", "Mean Δ", "t-stat", "p-value", "p < 0.05", "p < 0.10"]
     table_data = []
@@ -218,6 +231,9 @@ def plot_stat_table(ttest_df, ax):
 # ---------------------------------------------------------------------------
 
 def build_figure(df, ttest_df, output_path):
+    """
+    Combine all metrics into a single figure.
+    """
     focus_metric = "f1_macro"  # primary metric for the detailed plots
 
     fig = plt.figure(figsize=(18, 14), facecolor="#fafafa")
