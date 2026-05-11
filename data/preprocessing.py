@@ -31,7 +31,7 @@ def stratified_sample(df, n):
     return pd.concat(groups).reset_index(drop=True)
 
 
-def split_train_validation(df, val_size=0.15):
+def split_train_validation(df, val_size=0.2):
     """
     Split training data into training and evaluation
     """

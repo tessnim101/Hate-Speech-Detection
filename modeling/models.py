@@ -72,10 +72,17 @@ class HierarchicalContextModel(nn.Module):
 
         thread = torch.stack([root_cls, parent_cls, tweet_cls], dim=1) + pos_emb
 
+        # Sequences with only special tokens ([CLS] + [SEP]) have attention_mask sum == 2
+        root_empty   = (root_attention_mask.sum(dim=1)   <= 2)
+        parent_empty = (parent_attention_mask.sum(dim=1) <= 2)
+        tweet_empty  = torch.zeros(root_empty.shape[0], dtype=torch.bool, device=root_cls.device)
+        key_padding_mask = torch.stack([root_empty, parent_empty, tweet_empty], dim=1)
+
         attn_out, _ = self.thread_attention(
             query=thread[:, 2:, :], # tweet CLS as query  (B, 1, H)
             key=thread, # full thread as keys  (B, 3, H)
             value=thread, # full thread as vals  (B, 3, H)
+            key_padding_mask=key_padding_mask,
         )
         # attn_out: (B, 1, H), tweet representation enriched by thread context
         pooled = attn_out.squeeze(1)  # (B, H)

@@ -13,9 +13,9 @@ from transformers import AutoTokenizer, EarlyStoppingCallback
 from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical
 from modeling.models import load_model, HierarchicalContextModel
 from training.trainer_utils import build_trainer
-from training.metrics import compute_metrics
+from training.trainer_utils import compute_metrics
 from config import CONFIG
-from helpers import (
+from training.helpers import (
     EpochMetricsCallback,
     freeze_encoder_bottom_layers,
     prepare_dataset,

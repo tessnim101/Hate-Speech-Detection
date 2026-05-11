@@ -11,6 +11,8 @@ import os
 import argparse
 from datetime import datetime
 from pathlib import Path
+import random
+import numpy as np
 
 import torch
 
@@ -18,6 +20,20 @@ from data.loader import load_data
 from data.preprocessing import filter_contextual_tweets, split_train_validation
 from utils.imbalance import compute_class_weights, oversample_minority_classes
 from training.runners import run_baseline, run_hierarchical
+
+def set_seed(seed: int):
+    """
+    Fix all sources of randomness for reproducible training.
+    Does not eliminate run-to-run variance entirely on GPU (CUDA
+    non-determinism) but makes results as stable as possible.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # Forces cuDNN to use deterministic algorithms — small performance cost
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark     = False
 
 
 def parse_args():
@@ -38,6 +54,7 @@ def parse_args():
 
 
 if __name__ == "__main__":
+    set_seed(42)
     RUN_ID = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     DATADIR, RES_DIR, IMBALANCE_STRATEGY = parse_args()
 

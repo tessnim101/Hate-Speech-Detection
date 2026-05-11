@@ -93,7 +93,8 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         metric_for_best_model="eval_f1_macro",     
         logging_steps=50,
         fp16=config.get("fp16", False),
-        report_to="none",                         
+        report_to="none",  
+        seed = 42,                       
     )
 
     collator = DefaultDataCollator() if isinstance(model, HierarchicalContextModel) else None
