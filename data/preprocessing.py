@@ -114,3 +114,36 @@ def tokenize_hierarchical(dataset, tokenizer, max_len: int):
         }
 
     return dataset.map(tokenize, batched=True)
+
+
+def tokenize_backtranslation(dataset, tokenizer, max_len: int):
+    """
+    Tokenizer for the back-translation context model.
+    Tokenizes root, parent, tweet, and back-translated tweet independently.
+    """
+    def tokenize(example):
+        def enc(texts):
+            return tokenizer(
+                texts,
+                truncation=True,
+                padding="max_length",
+                max_length=max_len,
+            )
+
+        root   = enc(example["root_text"])
+        parent = enc(example["parent_text"])
+        tweet  = enc(example["text"])
+        bt     = enc(example["backtranslated_text"])
+
+        return {
+            "root_input_ids":        root["input_ids"],
+            "root_attention_mask":   root["attention_mask"],
+            "parent_input_ids":      parent["input_ids"],
+            "parent_attention_mask": parent["attention_mask"],
+            "tweet_input_ids":       tweet["input_ids"],
+            "tweet_attention_mask":  tweet["attention_mask"],
+            "bt_input_ids":          bt["input_ids"],
+            "bt_attention_mask":     bt["attention_mask"],
+        }
+
+    return dataset.map(tokenize, batched=True)

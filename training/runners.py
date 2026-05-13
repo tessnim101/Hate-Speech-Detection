@@ -10,8 +10,8 @@ from pathlib import Path
 
 from transformers import AutoTokenizer, EarlyStoppingCallback
 
-from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical
-from modeling.models import load_model, HierarchicalContextModel
+from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical, tokenize_backtranslation
+from modeling.models import load_model, HierarchicalContextModel, BackTranslationContextModel
 from training.trainer_utils import build_trainer
 from training.trainer_utils import compute_metrics
 from config import CONFIG
@@ -25,6 +25,9 @@ from training.helpers import (
     save_hierarchical_model,
     evaluate_on_test,
 )
+
+# reuse the same serialization logic for BackTranslationContextModel
+save_bt_model = save_hierarchical_model
 
 
 def _run_training(
@@ -168,4 +171,69 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
         train_ds, val_ds, df_test,
         run_id, res_dir, run_config,
         save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(trainer, tokenizer, Path(res_dir) / "best_model_context"),
+    )
+
+
+def run_backtranslation(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
+    """
+    Fine-tune the back-translation context model on tweet + parent + root + back-translated tweet.
+
+    Identical to run_hierarchical but adds a 4th context signal: the back-translated version of
+    the tweet (ES→EN→ES), encoded separately and fused via multi-head attention alongside the
+    thread context. Requires the 'backtranslated_text' column to be present in the DataFrames
+    (populated by translate.py and merged in data/loader.py).
+
+    Args:
+        df_train: Training DataFrame (must contain 'backtranslated_text').
+        df_val: Validation DataFrame.
+        df_test: Test DataFrame.
+        run_id: Timestamp string used to identify this run in result CSVs.
+        res_dir: Output directory for checkpoints and result files.
+        class_weights: Optional weight tensor containing class weights.
+    """
+    if df_train["backtranslated_text"].eq("").all():
+        print("[backtranslation] 'backtranslated_text' column is empty — "
+              "run translate.py first. Skipping run_backtranslation.")
+        return
+
+    tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
+
+    df_train_h = ids_to_text(df_train.copy())
+    df_val_h   = ids_to_text(df_val.copy())
+
+    train_ds = format_dataset(
+        tokenize_backtranslation(
+            prepare_dataset(df_train_h, ["text", "parent_text", "root_text", "backtranslated_text"]),
+            tokenizer, CONFIG["max_len"],
+        ),
+        "backtranslation",
+    )
+    val_ds = format_dataset(
+        tokenize_backtranslation(
+            prepare_dataset(df_val_h, ["text", "parent_text", "root_text", "backtranslated_text"]),
+            tokenizer, CONFIG["max_len"],
+        ),
+        "backtranslation",
+    )
+
+    model = BackTranslationContextModel(CONFIG["model_name"])
+    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
+
+    run_config = {
+        **CONFIG,
+        "learning_rate": 2e-5,
+        "weight_decay":  0.0025,
+        "warmup_ratio":  0.1,
+        "max_grad_norm": 1.0,
+        "metrics_fn":    compute_metrics,
+        "class_weights": class_weights,
+        "output_dir":    str(Path(res_dir) / "checkpoints"),
+        "callbacks":     [EpochMetricsCallback(), EarlyStoppingCallback(early_stopping_patience=4)],
+    }
+
+    _run_training(
+        model, "backtranslation", tokenizer,
+        train_ds, val_ds, df_test,
+        run_id, res_dir, run_config,
+        save_fn=lambda trainer, tokenizer, res_dir: save_bt_model(trainer, tokenizer, Path(res_dir) / "best_model_bt"),
     )
