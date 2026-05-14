@@ -19,7 +19,7 @@ import torch
 from data.loader import load_data
 from data.preprocessing import filter_contextual_tweets, split_train_validation
 from utils.imbalance import compute_class_weights, oversample_minority_classes
-from training.runners import run_baseline, run_hierarchical, run_backtranslation
+from training.runners import run_baseline, run_hierarchical, run_augmented
 
 def set_seed(seed: int):
     """
@@ -85,15 +85,15 @@ if __name__ == "__main__":
         print(f"[device] {n_gpus} GPU(s): "
               + ", ".join(torch.cuda.get_device_name(i) for i in range(n_gpus)))
 
-    run_baseline(
-        df_train_split, df_val_split, df_test,
-        run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
-    )
-    run_hierarchical(
-        df_train_split, df_val_split, df_test,
-        run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
-    )
-    run_backtranslation(
+    # run_baseline(
+    #     df_train_split, df_val_split, df_test,
+    #     run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
+    # )
+    # run_hierarchical(
+    #     df_train_split, df_val_split, df_test,
+    #     run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
+    # )
+    run_augmented(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
     )

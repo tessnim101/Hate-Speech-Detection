@@ -97,10 +97,11 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         seed = 42,                       
     )
 
-    collator = DefaultDataCollator() if isinstance(model, HierarchicalContextModel) else None
+    _is_custom = isinstance(model, HierarchicalContextModel)
+    collator = DefaultDataCollator() if _is_custom else None
 
     class_weights  = config.get("class_weights")
-    is_hierarchical = isinstance(model, HierarchicalContextModel)
+    is_hierarchical = _is_custom
 
     use_custom_trainer = class_weights is not None or is_hierarchical
 

@@ -3,9 +3,9 @@ import argostranslate.package
 import argostranslate.translate
 from tqdm import tqdm
 
-INPUT_DIR         = "data/spanish_subset/"
-SPANISH_COLUMN    = "text"
-ID_COLUMN         = "comment_id"
+INPUT_DIR      = "data/spanish_subset/"
+SPANISH_COLUMN = "text"
+ID_COLUMN      = "comment_id"
 
 
 def setup_translation():

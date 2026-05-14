@@ -116,34 +116,16 @@ def tokenize_hierarchical(dataset, tokenizer, max_len: int):
     return dataset.map(tokenize, batched=True)
 
 
-def tokenize_backtranslation(dataset, tokenizer, max_len: int):
+def augment_with_backtranslation(df):
     """
-    Tokenizer for the back-translation context model.
-    Tokenizes root, parent, tweet, and back-translated tweet independently.
+    Expand the training set by appending back-translated tweets as new rows.
+
+    For each row where backtranslated_text is non-empty, a copy of the row is
+    created with text replaced by the back-translated version and the same label.
+    This follows the data-augmentation approach from Beddiar et al. (2021).
     """
-    def tokenize(example):
-        def enc(texts):
-            return tokenizer(
-                texts,
-                truncation=True,
-                padding="max_length",
-                max_length=max_len,
-            )
-
-        root   = enc(example["root_text"])
-        parent = enc(example["parent_text"])
-        tweet  = enc(example["text"])
-        bt     = enc(example["backtranslated_text"])
-
-        return {
-            "root_input_ids":        root["input_ids"],
-            "root_attention_mask":   root["attention_mask"],
-            "parent_input_ids":      parent["input_ids"],
-            "parent_attention_mask": parent["attention_mask"],
-            "tweet_input_ids":       tweet["input_ids"],
-            "tweet_attention_mask":  tweet["attention_mask"],
-            "bt_input_ids":          bt["input_ids"],
-            "bt_attention_mask":     bt["attention_mask"],
-        }
-
-    return dataset.map(tokenize, batched=True)
+    bt_rows = df[df["backtranslated_text"].ne("")].copy()
+    bt_rows["text"] = bt_rows["backtranslated_text"]
+    augmented = pd.concat([df, bt_rows], ignore_index=True)
+    print(f"[augment] Added {len(bt_rows):,} back-translated rows → {len(augmented):,} total.")
+    return augmented

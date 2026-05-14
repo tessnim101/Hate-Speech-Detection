@@ -19,7 +19,7 @@ from datasets import Dataset
 from safetensors.torch import save_file
 from transformers import AutoTokenizer, TrainerCallback
 
-from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical, tokenize_backtranslation
+from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical
 from config import CONFIG
 
 
@@ -122,15 +122,9 @@ def format_dataset(dataset, model_type="baseline"):
             "tweet_input_ids",  "tweet_attention_mask",
             "labels",
         ],
-        "backtranslation": [
-            "root_input_ids",   "root_attention_mask",
-            "parent_input_ids", "parent_attention_mask",
-            "tweet_input_ids",  "tweet_attention_mask",
-            "bt_input_ids",     "bt_attention_mask",
-            "labels",
-        ],
     }
-    dataset.set_format(type="torch", columns=columns[model_type])
+    key = "hierarchical" if model_type == "augmented" else model_type
+    dataset.set_format(type="torch", columns=columns[key])
     return dataset
 
 
@@ -212,18 +206,11 @@ def evaluate_on_test(trainer, df_test, tokenizer, model_type):
         test_ds = tokenize_baseline(test_ds, tokenizer, CONFIG["max_len"])
         test_ds = format_dataset(test_ds, "baseline")
 
-    elif model_type == "hierarchical":
-        # Resolve parent/root IDs to text before tokenizing
+    elif model_type in ("hierarchical", "augmented"):
         df_test = ids_to_text(df_test.copy())
         test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
         test_ds = tokenize_hierarchical(test_ds, tokenizer, CONFIG["max_len"])
-        test_ds = format_dataset(test_ds, "hierarchical")
-
-    elif model_type == "backtranslation":
-        df_test = ids_to_text(df_test.copy())
-        test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text", "backtranslated_text"])
-        test_ds = tokenize_backtranslation(test_ds, tokenizer, CONFIG["max_len"])
-        test_ds = format_dataset(test_ds, "backtranslation")
+        test_ds = format_dataset(test_ds, model_type)
 
     else:
         raise ValueError(f"Unknown model_type: {model_type!r}")
