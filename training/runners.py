@@ -10,8 +10,8 @@ from pathlib import Path
 
 from transformers import AutoTokenizer, EarlyStoppingCallback
 
-from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical, augment_with_backtranslation
-from modeling.models import load_model, HierarchicalContextModel
+from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical, augment_with_backtranslation , tokenize_cross_attention
+from modeling.models import load_model, HierarchicalContextModel , CrossAttentionHoaxModel
 from training.trainer_utils import build_trainer
 from training.trainer_utils import compute_metrics
 from config import CONFIG
@@ -170,6 +170,36 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
         save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(trainer, tokenizer, Path(res_dir) / "best_model_context"),
     )
 
+def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
+    tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
+
+    df_train_ca = ids_to_text(df_train.copy())
+    df_val_ca   = ids_to_text(df_val.copy())
+
+    train_ds = format_dataset(tokenize_cross_attention(prepare_dataset(df_train_ca, ["text", "hoax", "parent_text", "root_text"]), tokenizer, CONFIG["max_len"]), "cross_attention")
+    val_ds   = format_dataset(tokenize_cross_attention(prepare_dataset(df_val_ca,   ["text", "hoax", "parent_text", "root_text"]), tokenizer, CONFIG["max_len"]), "cross_attention")
+
+    model = CrossAttentionHoaxModel(CONFIG["model_name"])
+    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
+
+    run_config = {
+        **CONFIG,
+        "learning_rate": 2e-5,
+        "weight_decay":  0.0025,
+        "warmup_ratio":  0.1,
+        "max_grad_norm": 1.0,
+        "metrics_fn":    compute_metrics,
+        "class_weights": class_weights,
+        "output_dir":    str(Path(res_dir) / "checkpoints"),
+        "callbacks":     [EpochMetricsCallback(), EarlyStoppingCallback(early_stopping_patience=4)],
+    }
+
+    _run_training(
+        model, "cross_attention", tokenizer,
+        train_ds, val_ds, df_test,
+        run_id, res_dir, run_config,
+        save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(trainer, tokenizer, Path(res_dir) / "best_model_cross_attention"),
+    )
 
 def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
     """
@@ -234,3 +264,4 @@ def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None
         run_id, res_dir, run_config,
         save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(trainer, tokenizer, Path(res_dir) / "best_model_bt"),
     )
+

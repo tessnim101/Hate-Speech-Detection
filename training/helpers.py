@@ -19,13 +19,9 @@ from datasets import Dataset
 from safetensors.torch import save_file
 from transformers import AutoTokenizer, TrainerCallback
 
-from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical
+from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical , tokenize_cross_attention
 from config import CONFIG
 
-
-# ---------------------------------------------------------------------------
-# Callback
-# ---------------------------------------------------------------------------
 
 class EpochMetricsCallback(TrainerCallback):
     """
@@ -47,10 +43,6 @@ class EpochMetricsCallback(TrainerCallback):
         self.records.append(row)
         self._pending = {}
 
-
-# ---------------------------------------------------------------------------
-# Encoder freezing
-# ---------------------------------------------------------------------------
 
 def freeze_encoder_bottom_layers(model, n_layers=6):
     """
@@ -81,10 +73,6 @@ def freeze_encoder_bottom_layers(model, n_layers=6):
           f"({100 * frozen / total:.1f}%)")
 
 
-# ---------------------------------------------------------------------------
-# Dataset helpers
-# ---------------------------------------------------------------------------
-
 def prepare_dataset(df, columns, label_col="stereotype"):
     """
     Subset a DataFrame to the relevant columns and convert to a HuggingFace Dataset.
@@ -109,7 +97,7 @@ def format_dataset(dataset, model_type="baseline"):
 
     Args:
         dataset: Tokenized HuggingFace Dataset.
-        model_type: "baseline" or "hierarchical".
+        model_type: "baseline" , "hierarchical" or "cross_attention"
 
     Returns:
         The same dataset with torch format.
@@ -122,15 +110,16 @@ def format_dataset(dataset, model_type="baseline"):
             "tweet_input_ids",  "tweet_attention_mask",
             "labels",
         ],
+        "cross_attention": [
+            "context_input_ids", "context_attention_mask",
+            "tweet_input_ids",   "tweet_attention_mask",
+            "labels",
+        ],
     }
     key = "hierarchical" if model_type == "augmented" else model_type
     dataset.set_format(type="torch", columns=columns[key])
     return dataset
 
-
-# ---------------------------------------------------------------------------
-# Persistence helpers
-# ---------------------------------------------------------------------------
 
 def save_train_results(records, filepath, extra_info=None):
     """
@@ -184,9 +173,6 @@ def save_hierarchical_model(trainer, tokenizer, save_dir):
         json.dump(hconfig, f, indent=2)
 
 
-# ---------------------------------------------------------------------------
-# Evaluation helper
-# ---------------------------------------------------------------------------
 
 def evaluate_on_test(trainer, df_test, tokenizer, model_type):
     """
@@ -211,6 +197,12 @@ def evaluate_on_test(trainer, df_test, tokenizer, model_type):
         test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
         test_ds = tokenize_hierarchical(test_ds, tokenizer, CONFIG["max_len"])
         test_ds = format_dataset(test_ds, model_type)
+
+    elif model_type == "cross_attention":
+        df_test = ids_to_text(df_test.copy())
+        test_ds = prepare_dataset(df_test, ["text", "hoax", "parent_text", "root_text"])
+        test_ds = tokenize_cross_attention(test_ds, tokenizer, CONFIG["max_len"])
+        test_ds = format_dataset(test_ds, "cross_attention")
 
     else:
         raise ValueError(f"Unknown model_type: {model_type!r}")

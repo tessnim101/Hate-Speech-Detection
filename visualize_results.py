@@ -16,10 +16,6 @@ from matplotlib.gridspec import GridSpec
 from scipy import stats
 
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 METRICS = ["accuracy", "f1_macro", "f1_binary", "f1_class0", "f1_class1"]
 METRIC_LABELS = {
     "accuracy":  "Accuracy",
@@ -51,10 +47,6 @@ plt.rcParams.update({
 })
 
 
-# ---------------------------------------------------------------------------
-# Argument parsing
-# ---------------------------------------------------------------------------
-
 def parse_args():
     """
     Parse path to results foler and path to output folder.
@@ -64,11 +56,7 @@ def parse_args():
     p.add_argument("--output_path",  required=True, help="Directory to save figures")
     return p.parse_args()
 
-
-# ---------------------------------------------------------------------------
-# Statistical analysis
-# ---------------------------------------------------------------------------
-
+# Statistical analysis 
 def compute_summary(df):
     """
     Mean and std per model per metric.
@@ -97,10 +85,6 @@ def paired_ttests(df):
         })
     return pd.DataFrame(rows)
 
-
-# ---------------------------------------------------------------------------
-# Plots
-# ---------------------------------------------------------------------------
 
 def plot_bar_with_ci(df, ax, metric):
     """
@@ -226,10 +210,6 @@ def plot_stat_table(ttest_df, ax):
     ax.set_title("Paired t-test: Context vs Baseline", **FONT_TITLE, pad=20)
 
 
-# ---------------------------------------------------------------------------
-# Main figure
-# ---------------------------------------------------------------------------
-
 def build_figure(df, ttest_df, output_path):
     """
     Combine all metrics into a single figure.
@@ -272,10 +252,6 @@ def build_figure(df, ttest_df, output_path):
     print(f"[saved] Figure → {out}")
     plt.close()
 
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 def main():
     args = parse_args()
