@@ -13,6 +13,15 @@ Usage:
         --context_path  results/best_model_context/ \
         --per_sample    results/inference_per_sample.csv \
         --results_path  results/figures/
+
+frame.jpg 
+    ↓
+YOLO (best.pt) → glottis bbox [x1, y1, x2, y2]
+    ↓
+SAM2 receives bbox as prompt → generates pixel mask
+    ↓
+saves overlay + mask.png
+
 """
 
 import argparse

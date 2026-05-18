@@ -31,7 +31,7 @@ from sklearn.metrics import (
 
 from data.loader import load_data
 from data.preprocessing import ids_to_text, filter_contextual_tweets
-from modeling.models import HierarchicalContextModel
+from modeling.models import HierarchicalContextModel , CrossAttentionHoaxModel
 from config import CONFIG
 
 
@@ -162,6 +162,75 @@ def predict_hierarchical(model, tokenizer, df, batch_size, device):
             parent_attention_mask=parent_enc["attention_mask"],
             root_input_ids=root_enc["input_ids"],
             root_attention_mask=root_enc["attention_mask"],
+        )
+
+        logits = out["logits"]
+        probs  = torch.softmax(logits, dim=-1)
+        preds  = logits.argmax(dim=-1)
+
+        all_preds.extend(preds.cpu().tolist())
+        all_probs.extend(probs.cpu().tolist())
+
+    return np.array(all_preds), np.array(all_probs)
+
+@torch.no_grad()
+def predict_cross_attention(model, tokenizer, df, batch_size, device):
+    """
+    Run batched inference with the cross-attention model.
+
+    Each batch tokenizes the context (hoax + root + parent) and tweet
+    separately, matching the forward() signature of CrossAttentionHoaxModel.
+
+    Args:
+        model: Loaded CrossAttentionHoaxModel in eval mode.
+        tokenizer: Matching tokenizer.
+        df: DataFrame with "text", "hoax", "parent_text", and "root_text" columns.
+        batch_size: Number of samples per forward pass.
+        device: torch.device to run inference on.
+
+    Returns:
+        preds: Integer array of shape (N,) with predicted class indices.
+        probs: Float array of shape (N, num_classes) with softmax probabilities.
+    """
+    model.eval()
+    all_preds, all_probs = [], []
+
+    texts        = df["text"].tolist()
+    hoax_texts   = df["hoax"].tolist()
+    parent_texts = df["parent_text"].tolist()
+    root_texts   = df["root_text"].tolist()
+
+    def enc(batch, max_length):
+        return tokenizer(
+            batch,
+            padding=True,
+            truncation=True,
+            max_length=max_length,
+            return_tensors="pt",
+        ).to(device)
+
+    for i in range(0, len(texts), batch_size):
+        h_batch = hoax_texts[i   : i + batch_size]
+        r_batch = root_texts[i   : i + batch_size]
+        p_batch = parent_texts[i : i + batch_size]
+        t_batch = texts[i        : i + batch_size]
+
+        context = []
+        for h, r, p in zip(h_batch, r_batch, p_batch):
+            parts = []
+            if h and str(h).strip(): parts.append(f"Hoax: {h}")
+            if r and str(r).strip(): parts.append(f"Thread: {r}")
+            if p and str(p).strip(): parts.append(f"Reply to: {p}")
+            context.append(" | ".join(parts))
+
+        context_enc = enc(context, CONFIG["max_len_context"])
+        tweet_enc   = enc(t_batch, CONFIG["max_len_tweet"])
+
+        out = model(
+            context_input_ids=      context_enc["input_ids"],
+            context_attention_mask= context_enc["attention_mask"],
+            tweet_input_ids=        tweet_enc["input_ids"],
+            tweet_attention_mask=   tweet_enc["attention_mask"],
         )
 
         logits = out["logits"]

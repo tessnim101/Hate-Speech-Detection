@@ -4,7 +4,7 @@ Pre-process data
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
-
+from config import CONFIG
 
 def filter_contextual_tweets(df):
     """
@@ -115,7 +115,7 @@ def tokenize_hierarchical(dataset, tokenizer, max_len: int):
 
     return dataset.map(tokenize, batched=True)
 
-def tokenize_cross_attention(dataset, tokenizer, max_len: int):
+def tokenize_cross_attention(dataset, tokenizer):
     """
     Tokenizer for the cross-attention model.
     Context (hoax + root + parent) and tweet are tokenized separately.
@@ -129,8 +129,8 @@ def tokenize_cross_attention(dataset, tokenizer, max_len: int):
             if p and p.strip(): parts.append(f"Reply to: {p}")
             context.append(" | ".join(parts))
 
-        ctx   = tokenizer(context,         truncation=True, padding="max_length", max_length=max_len)
-        tweet = tokenizer(example["text"], truncation=True, padding="max_length", max_length=max_len)
+        ctx   = tokenizer(context,         truncation=True, padding="max_length", max_length=CONFIG["max_len_context"])
+        tweet = tokenizer(example["text"], truncation=True, padding="max_length", max_length=CONFIG["max_len_tweet"])
         return {
             "context_input_ids":      ctx["input_ids"],
             "context_attention_mask": ctx["attention_mask"],
