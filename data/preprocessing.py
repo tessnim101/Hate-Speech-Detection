@@ -115,6 +115,29 @@ def tokenize_hierarchical(dataset, tokenizer, max_len: int):
 
     return dataset.map(tokenize, batched=True)
 
+def tokenize_cross_attention(dataset, tokenizer, max_len: int):
+    """
+    Tokenizer for the cross-attention model.
+    Context (hoax + root + parent) and tweet are tokenized separately.
+    """
+    def tokenize(example):
+        context = []
+        for h, r, p in zip(example["hoax"], example["root_text"], example["parent_text"]):
+            parts = []
+            if h and h.strip(): parts.append(f"Hoax: {h}")
+            if r and r.strip(): parts.append(f"Thread: {r}")
+            if p and p.strip(): parts.append(f"Reply to: {p}")
+            context.append(" | ".join(parts))
+
+        ctx   = tokenizer(context,         truncation=True, padding="max_length", max_length=max_len)
+        tweet = tokenizer(example["text"], truncation=True, padding="max_length", max_length=max_len)
+        return {
+            "context_input_ids":      ctx["input_ids"],
+            "context_attention_mask": ctx["attention_mask"],
+            "tweet_input_ids":        tweet["input_ids"],
+            "tweet_attention_mask":   tweet["attention_mask"],
+        }
+    return dataset.map(tokenize, batched=True)
 
 def augment_with_backtranslation(df):
     """

@@ -4,7 +4,7 @@ Load pre-trained model and define custom models
 
 import torch
 import torch.nn as nn
-from transformers import AutoModel, AutoModelForSequenceClassification
+from transformers import AutoModel, AutoModelForSequenceClassification , AutoTokenizer
 
 
 def load_model(model_name: str, num_labels: int = 2):
@@ -97,3 +97,122 @@ class HierarchicalContextModel(nn.Module):
         return {"logits": logits}
 
 
+class CrossAttentionHoaxModel(nn.Module):
+    """
+    Token-level cross-attention model for racial hoax detection.
+
+    Unlike the CLS-level hierarchical model, this model allows every
+    tweet token to attend to every context token (hoax + root + parent),
+    capturing fine-grained interactions between the tweet and its context.
+
+    Args:
+        model_name:  HuggingFace model name or local path
+        num_labels:  number of output classes (default: 2)
+        hidden_dim:  intermediate projection size (default: 256)
+        num_heads:   number of attention heads (default: 8)
+        dropout:     dropout rate (default: 0.1)
+    """
+
+    def __init__(
+        self,
+        model_name:  str,
+        num_labels:  int   = 2,
+        hidden_dim:  int   = 256,
+        num_heads:   int   = 8,
+        dropout:     float = 0.1,
+    ) -> None:
+        super().__init__()
+
+        self.encoder   = AutoModel.from_pretrained(model_name)
+        self.num_labels = num_labels
+        hidden = self.encoder.config.hidden_size  # 768
+
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=hidden,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+        self.layer_norm = nn.LayerNorm(hidden)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_labels),
+        )
+
+    def encode(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """Return all token embeddings for a batch of texts."""
+        output = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        return output.last_hidden_state  # (B, seq_len, 768)
+
+    def forward(
+        self,
+        context_input_ids:      torch.Tensor,
+        context_attention_mask: torch.Tensor,
+        tweet_input_ids:        torch.Tensor,
+        tweet_attention_mask:   torch.Tensor,
+        labels:                 torch.Tensor | None = None,
+        class_weights:          torch.Tensor | None = None,
+        return_attention_weights: bool = False
+    ) -> dict:
+        """
+        Args:
+            context_input_ids:      (B, ctx_len)   hoax + root + parent concatenated
+            context_attention_mask: (B, ctx_len)
+            tweet_input_ids:        (B, tweet_len)
+            tweet_attention_mask:   (B, tweet_len)
+            labels:                 (B,) long tensor, optional
+            class_weights:          (num_labels,) float tensor, optional
+            return_attention_weights: bool, optional
+        Returns:
+            dict with 'logits' (B, num_labels) and optionally 'loss'
+        """
+        context_tokens = self.encode(context_input_ids, context_attention_mask)  # (B, ctx_len, 768)
+        tweet_tokens   = self.encode(tweet_input_ids,   tweet_attention_mask)    # (B, tweet_len, 768)
+
+        # True where tokens should be ignored by attention
+        context_key_padding_mask = (context_attention_mask == 0)  # (B, ctx_len)
+
+        # Cross-attention: tweet tokens attend to context tokens
+        attended, attn_weights = self.cross_attention(
+        query=tweet_tokens,
+        key=context_tokens,
+        value=context_tokens,
+        key_padding_mask=context_key_padding_mask,
+        need_weights=True,        # ← always compute
+        average_attn_weights=False,  # ← keep per-head weights
+            )
+        
+        # Residual connection + layer norm
+        enriched = self.layer_norm(tweet_tokens + attended)  # (B, tweet_len, 768)
+
+        # [CLS] token for classification
+        cls_repr = enriched[:, 0, :]   # (B, 768)
+        logits   = self.classifier(cls_repr)  # (B, num_labels)
+
+        loss = None
+        if labels is not None:
+            loss = nn.CrossEntropyLoss(weight=class_weights)(logits, labels)
+
+        out = {"logits": logits, "loss": loss}
+        if return_attention_weights:
+            out["attention_weights"] = attn_weights  # (B, num_heads, tweet_len, ctx_len)
+        return out
+
+    @torch.no_grad()
+    def predict_proba(
+        self,
+        context_input_ids:      torch.Tensor,
+        context_attention_mask: torch.Tensor,
+        tweet_input_ids:        torch.Tensor,
+        tweet_attention_mask:   torch.Tensor,
+    ) -> torch.Tensor:
+        """Returns softmax probabilities (B, num_labels) for inference."""
+        out = self.forward(
+            context_input_ids, context_attention_mask,
+            tweet_input_ids,   tweet_attention_mask,
+        )
+        return torch.softmax(out["logits"], dim=-1)

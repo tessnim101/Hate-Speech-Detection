@@ -3,7 +3,7 @@ Training configuration.
 """
 
 CONFIG = {
-    "model_name": "xlm-roberta-base",
+    "model_name":"cardiffnlp/twitter-xlm-roberta-base",
     "max_len": 192,
     "max_len_fusion": 512,
     "train_bs": 16,
