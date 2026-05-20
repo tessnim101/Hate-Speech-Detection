@@ -75,7 +75,6 @@ def back_translate_split(split: str) -> None:
 def main():
     setup_translation()
     back_translate_split("train")
-    back_translate_split("test")
 
 
 if __name__ == "__main__":
