@@ -122,21 +122,21 @@ def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None)
         run_id, res_dir, run_config, save_fn,
     )
 
-
 def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
     """
-    Fine-tune the hierarchical context-aware model on tweet + parent + root text.
+    Fine-tune the hierarchical context-aware model on tweet + parent + root + hoax text.
 
-    Encodes each thread level separately with a shared XLM-RoBERTa encoder,
-    then combines representations via multi-head attention before classification.
-    The bottom 6 encoder layers are frozen, the top 6 and the attention head are trained.
+    Encodes each thread level and the associated hoax separately with a shared
+    XLM-RoBERTa encoder, then combines representations via multi-head attention
+    before classification. The bottom 6 encoder layers are frozen, the top 6
+    and the attention head are trained.
 
     Args:
-        df_train: Training DataFrame (raw, before tokenization).
-        df_val: Validation DataFrame.
-        df_test: Test DataFrame.
-        run_id: Timestamp string used to identify this run in result CSVs.
-        res_dir: Output directory for checkpoints and result files.
+        df_train:      Training DataFrame (raw, before tokenization).
+        df_val:        Validation DataFrame.
+        df_test:       Test DataFrame.
+        run_id:        Timestamp string used to identify this run in result CSVs.
+        res_dir:       Output directory for checkpoints and result files.
         class_weights: Optional weight tensor containing class weights.
     """
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
@@ -145,8 +145,20 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
     df_train_h = ids_to_text(df_train.copy())
     df_val_h   = ids_to_text(df_val.copy())
 
-    train_ds = format_dataset(tokenize_hierarchical(prepare_dataset(df_train_h, ["text", "parent_text", "root_text"]), tokenizer, CONFIG["max_len"]), "hierarchical")
-    val_ds   = format_dataset(tokenize_hierarchical(prepare_dataset(df_val_h,   ["text", "parent_text", "root_text"]), tokenizer, CONFIG["max_len"]), "hierarchical")
+    train_ds = format_dataset(
+        tokenize_hierarchical(
+            prepare_dataset(df_train_h, ["text", "hoax", "parent_text", "root_text"]),
+            tokenizer, CONFIG["max_len"],
+        ),
+        "hierarchical",
+    )
+    val_ds = format_dataset(
+        tokenize_hierarchical(
+            prepare_dataset(df_val_h, ["text", "hoax", "parent_text", "root_text"]),
+            tokenizer, CONFIG["max_len"],
+        ),
+        "hierarchical",
+    )
 
     model = HierarchicalContextModel(CONFIG["model_name"])
     freeze_encoder_bottom_layers(model.encoder, n_layers=6)
@@ -167,8 +179,78 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
         model, "hierarchical", tokenizer,
         train_ds, val_ds, df_test,
         run_id, res_dir, run_config,
-        save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(trainer, tokenizer, Path(res_dir) / "best_model_context"),
+        save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(
+            trainer, tokenizer, Path(res_dir) / "best_model_context"
+        ),
     )
+
+
+def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
+    """
+    Fine-tune the hierarchical model on a back-translation-augmented training set.
+
+    Follows the data-augmentation approach from Beddiar et al. (2021): back-translated
+    tweets are appended as new training rows with the same labels, expanding the training
+    set. The model architecture and evaluation are identical to run_hierarchical — only
+    the training data is larger.
+
+    Args:
+        df_train:      Training DataFrame (must contain 'backtranslated_text').
+        df_val:        Validation DataFrame (not augmented).
+        df_test:       Test DataFrame.
+        run_id:        Timestamp string used to identify this run in result CSVs.
+        res_dir:       Output directory for checkpoints and result files.
+        class_weights: Optional weight tensor containing class weights.
+    """
+    if df_train["backtranslated_text"].eq("").all():
+        print("[augmented] 'backtranslated_text' column is empty — "
+              "run translate.py first. Skipping run_augmented.")
+        return
+
+    tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
+
+    df_train_aug = augment_with_backtranslation(ids_to_text(df_train.copy()))
+    df_val_h     = ids_to_text(df_val.copy())
+
+    train_ds = format_dataset(
+        tokenize_hierarchical(
+            prepare_dataset(df_train_aug, ["text", "hoax", "parent_text", "root_text"]),
+            tokenizer, CONFIG["max_len"],
+        ),
+        "augmented",
+    )
+    val_ds = format_dataset(
+        tokenize_hierarchical(
+            prepare_dataset(df_val_h, ["text", "hoax", "parent_text", "root_text"]),
+            tokenizer, CONFIG["max_len"],
+        ),
+        "augmented",
+    )
+
+    model = HierarchicalContextModel(CONFIG["model_name"])
+    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
+
+    run_config = {
+        **CONFIG,
+        "learning_rate": 2e-5,
+        "weight_decay":  0.0025,
+        "warmup_ratio":  0.1,
+        "max_grad_norm": 1.0,
+        "metrics_fn":    compute_metrics,
+        "class_weights": class_weights,
+        "output_dir":    str(Path(res_dir) / "checkpoints"),
+        "callbacks":     [EpochMetricsCallback(), EarlyStoppingCallback(early_stopping_patience=4)],
+    }
+
+    _run_training(
+        model, "augmented", tokenizer,
+        train_ds, val_ds, df_test,
+        run_id, res_dir, run_config,
+        save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(
+            trainer, tokenizer, Path(res_dir) / "best_model_bt"
+        ),
+    )
+
 
 def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
@@ -200,68 +282,3 @@ def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weight
         run_id, res_dir, run_config,
         save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(trainer, tokenizer, Path(res_dir) / "best_model_cross_attention"),
     )
-
-def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
-    """
-    Fine-tune the hierarchical model on a back-translation-augmented training set.
-
-    Follows the data-augmentation approach from Beddiar et al. (2021): back-translated
-    tweets are appended as new training rows with the same labels, expanding the training
-    set. The model architecture and evaluation are identical to run_hierarchical — only
-    the training data is larger.
-
-    Args:
-        df_train: Training DataFrame (must contain 'backtranslated_text').
-        df_val: Validation DataFrame (not augmented).
-        df_test: Test DataFrame.
-        run_id: Timestamp string used to identify this run in result CSVs.
-        res_dir: Output directory for checkpoints and result files.
-        class_weights: Optional weight tensor containing class weights.
-    """
-    if df_train["backtranslated_text"].eq("").all():
-        print("[augmented] 'backtranslated_text' column is empty — "
-              "run translate.py first. Skipping run_augmented.")
-        return
-
-    tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
-
-    df_train_aug = augment_with_backtranslation(ids_to_text(df_train.copy()))
-    df_val_h     = ids_to_text(df_val.copy())
-
-    train_ds = format_dataset(
-        tokenize_hierarchical(
-            prepare_dataset(df_train_aug, ["text", "parent_text", "root_text"]),
-            tokenizer, CONFIG["max_len"],
-        ),
-        "hierarchical",
-    )
-    val_ds = format_dataset(
-        tokenize_hierarchical(
-            prepare_dataset(df_val_h, ["text", "parent_text", "root_text"]),
-            tokenizer, CONFIG["max_len"],
-        ),
-        "hierarchical",
-    )
-
-    model = HierarchicalContextModel(CONFIG["model_name"])
-    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
-
-    run_config = {
-        **CONFIG,
-        "learning_rate": 2e-5,
-        "weight_decay":  0.0025,
-        "warmup_ratio":  0.1,
-        "max_grad_norm": 1.0,
-        "metrics_fn":    compute_metrics,
-        "class_weights": class_weights,
-        "output_dir":    str(Path(res_dir) / "checkpoints"),
-        "callbacks":     [EpochMetricsCallback(), EarlyStoppingCallback(early_stopping_patience=4)],
-    }
-
-    _run_training(
-        model, "augmented", tokenizer,
-        train_ds, val_ds, df_test,
-        run_id, res_dir, run_config,
-        save_fn=lambda trainer, tokenizer, res_dir: save_hierarchical_model(trainer, tokenizer, Path(res_dir) / "best_model_bt"),
-    )
-

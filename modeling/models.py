@@ -18,8 +18,12 @@ def load_model(model_name: str, num_labels: int = 2):
 
 class HierarchicalContextModel(nn.Module):
     """
-    Encodes root, parent, and tweet separately using a shared XLM-RoBERTa encoder,
-    then combines their [CLS] representations via multi-head attention before classification.
+    Encodes hoax, root, parent, and tweet separately using a shared XLM-RoBERTa
+    encoder, then combines their [CLS] representations via multi-head attention
+    before classification.
+
+    The hoax is the racial hoax claim associated with the thread (level4),
+    providing high-level topical context beyond the immediate conversation.
     """
 
     def __init__(self, model_name: str, num_labels: int = 2, dropout: float = 0.05):
@@ -27,14 +31,15 @@ class HierarchicalContextModel(nn.Module):
         self.encoder = AutoModel.from_pretrained(model_name)
         hidden = self.encoder.config.hidden_size  # 768 for XLM-RoBERTa base
 
+        # 4 positions: hoax, root, parent, tweet
+        self.position_embeddings = nn.Embedding(4, hidden)
+
         self.thread_attention = nn.MultiheadAttention(
             embed_dim=hidden,
             num_heads=8,
             dropout=dropout,
             batch_first=True,
         )
-
-        self.position_embeddings = nn.Embedding(3, hidden)
 
         self.classifier = nn.Sequential(
             nn.LayerNorm(hidden),
@@ -46,55 +51,58 @@ class HierarchicalContextModel(nn.Module):
         )
 
     def encode(self, input_ids, attention_mask):
-        """
-        Return [CLS] token representation for a batch of texts.
-        """
+        """Return [CLS] token representation for a batch of texts."""
         output = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
         return output.last_hidden_state[:, 0, :]
 
     def forward(
         self,
-        root_input_ids,      
+        hoax_input_ids,
+        hoax_attention_mask,
+        root_input_ids,
         root_attention_mask,
-        parent_input_ids,    
+        parent_input_ids,
         parent_attention_mask,
-        tweet_input_ids,     
+        tweet_input_ids,
         tweet_attention_mask,
         labels=None,
     ):
-        root_cls   = self.encode(root_input_ids,   root_attention_mask) # (B, H)
-        parent_cls = self.encode(parent_input_ids, parent_attention_mask)  
-        tweet_cls  = self.encode(tweet_input_ids,  tweet_attention_mask) 
+        hoax_cls   = self.encode(hoax_input_ids,   hoax_attention_mask)    # (B, H)
+        root_cls   = self.encode(root_input_ids,   root_attention_mask)    # (B, H)
+        parent_cls = self.encode(parent_input_ids, parent_attention_mask)  # (B, H)
+        tweet_cls  = self.encode(tweet_input_ids,  tweet_attention_mask)   # (B, H)
 
-        # Stack into a sequence of 3 "thread tokens": (B, 3, H)
-        positions = torch.arange(3, device=root_cls.device)
-        pos_emb = self.position_embeddings(positions).unsqueeze(0)  # (1, 3, H)
+        # Stack into a sequence of 4 "thread tokens": (B, 4, H)
+        # Order: hoax → root → parent → tweet (coarse to fine context)
+        positions = torch.arange(4, device=tweet_cls.device)
+        pos_emb   = self.position_embeddings(positions).unsqueeze(0)  # (1, 4, H)
 
-        thread = torch.stack([root_cls, parent_cls, tweet_cls], dim=1) + pos_emb
+        thread = torch.stack([hoax_cls, root_cls, parent_cls, tweet_cls], dim=1) + pos_emb
 
-        # Sequences with only special tokens ([CLS] + [SEP]) have attention_mask sum == 2
+        # Mask context positions that are empty (only special tokens present)
+        hoax_empty   = (hoax_attention_mask.sum(dim=1)   <= 2)
         root_empty   = (root_attention_mask.sum(dim=1)   <= 2)
         parent_empty = (parent_attention_mask.sum(dim=1) <= 2)
-        tweet_empty  = torch.zeros(root_empty.shape[0], dtype=torch.bool, device=root_cls.device)
-        key_padding_mask = torch.stack([root_empty, parent_empty, tweet_empty], dim=1)
+        tweet_empty  = torch.zeros(tweet_cls.shape[0], dtype=torch.bool, device=tweet_cls.device)
+        key_padding_mask = torch.stack(
+            [hoax_empty, root_empty, parent_empty, tweet_empty], dim=1
+        )  # (B, 4)
 
+        # Tweet (last position) attends to the full thread including hoax
         attn_out, _ = self.thread_attention(
-            query=thread[:, 2:, :], # tweet CLS as query  (B, 1, H)
-            key=thread, # full thread as keys  (B, 3, H)
-            value=thread, # full thread as vals  (B, 3, H)
+            query=thread[:, 3:, :],  # tweet CLS as query  (B, 1, H)
+            key=thread,              # full thread as keys  (B, 4, H)
+            value=thread,            # full thread as vals  (B, 4, H)
             key_padding_mask=key_padding_mask,
         )
-        # attn_out: (B, 1, H), tweet representation enriched by thread context
         pooled = attn_out.squeeze(1)  # (B, H)
-
         logits = self.classifier(pooled)
 
         loss = None
         if labels is not None:
             loss = nn.CrossEntropyLoss()(logits, labels)
 
-        # Return a dict for HuggingFace Trainer compatibility.
-        return {"logits": logits}
+        return {"loss": loss, "logits": logits}
 
 
 class CrossAttentionHoaxModel(nn.Module):

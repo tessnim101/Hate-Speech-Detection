@@ -96,15 +96,16 @@ def format_dataset(dataset, model_type="baseline"):
     Set the dataset output format to torch tensors, keeping only model-relevant columns.
 
     Args:
-        dataset: Tokenized HuggingFace Dataset.
-        model_type: "baseline" , "hierarchical" or "cross_attention"
+        dataset:    Tokenized HuggingFace Dataset.
+        model_type: "baseline", "hierarchical", "augmented", or "cross_attention".
 
     Returns:
-        The same dataset with torch format.
+        The same dataset with torch format applied in-place.
     """
     columns = {
-        "baseline":     ["input_ids", "attention_mask", "labels"],
+        "baseline": ["input_ids", "attention_mask", "labels"],
         "hierarchical": [
+            "hoax_input_ids",   "hoax_attention_mask",
             "root_input_ids",   "root_attention_mask",
             "parent_input_ids", "parent_attention_mask",
             "tweet_input_ids",  "tweet_attention_mask",
@@ -116,6 +117,7 @@ def format_dataset(dataset, model_type="baseline"):
             "labels",
         ],
     }
+    # augmented uses the same architecture and columns as hierarchical
     key = "hierarchical" if model_type == "augmented" else model_type
     dataset.set_format(type="torch", columns=columns[key])
     return dataset
@@ -194,7 +196,7 @@ def evaluate_on_test(trainer, df_test, tokenizer, model_type):
 
     elif model_type in ("hierarchical", "augmented"):
         df_test = ids_to_text(df_test.copy())
-        test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
+        test_ds = prepare_dataset(df_test, ["text", "hoax", "parent_text", "root_text"])
         test_ds = tokenize_hierarchical(test_ds, tokenizer, CONFIG["max_len"])
         test_ds = format_dataset(test_ds, model_type)
 

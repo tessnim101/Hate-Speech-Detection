@@ -89,7 +89,7 @@ def tokenize_baseline(dataset, tokenizer, max_len):
 def tokenize_hierarchical(dataset, tokenizer, max_len: int):
     """
     Tokenizer for the hierarchical model (context-aware).
-    Tokenizes root, parent, and tweet independently.
+    Tokenizes hoax, root, parent, and tweet independently.
     """
     def tokenize(example):
         def enc(texts):
@@ -100,11 +100,14 @@ def tokenize_hierarchical(dataset, tokenizer, max_len: int):
                 max_length=max_len,
             )
 
+        hoax   = enc(example["hoax"])
         root   = enc(example["root_text"])
         parent = enc(example["parent_text"])
         tweet  = enc(example["text"])
 
         return {
+            "hoax_input_ids":        hoax["input_ids"],
+            "hoax_attention_mask":   hoax["attention_mask"],
             "root_input_ids":        root["input_ids"],
             "root_attention_mask":   root["attention_mask"],
             "parent_input_ids":      parent["input_ids"],

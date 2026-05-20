@@ -85,14 +85,14 @@ if __name__ == "__main__":
         print(f"[device] {n_gpus} GPU(s): "
               + ", ".join(torch.cuda.get_device_name(i) for i in range(n_gpus)))
 
-    # run_baseline(
-    #     df_train_split, df_val_split, df_test,
-    #     run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
-    # )
-    # run_hierarchical(
-    #     df_train_split, df_val_split, df_test,
-    #     run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
-    # )
+    run_baseline(
+        df_train_split, df_val_split, df_test,
+        run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
+    )
+    run_hierarchical(
+        df_train_split, df_val_split, df_test,
+        run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
+    )
     run_cross_attention(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
