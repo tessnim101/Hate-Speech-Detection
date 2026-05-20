@@ -203,7 +203,7 @@ def evaluate_on_test(trainer, df_test, tokenizer, model_type):
     elif model_type == "cross_attention":
         df_test = ids_to_text(df_test.copy())
         test_ds = prepare_dataset(df_test, ["text", "hoax", "parent_text", "root_text"])
-        test_ds = tokenize_cross_attention(test_ds, tokenizer, CONFIG["max_len"])
+        test_ds = tokenize_cross_attention(test_ds, tokenizer, CONFIG["max_len"], CONFIG["max_len_cross_attention"])
         test_ds = format_dataset(test_ds, "cross_attention")
 
     else:

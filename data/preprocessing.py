@@ -118,28 +118,36 @@ def tokenize_hierarchical(dataset, tokenizer, max_len: int):
 
     return dataset.map(tokenize, batched=True)
 
-def tokenize_cross_attention(dataset, tokenizer, max_len: int):
+def tokenize_cross_attention(dataset, tokenizer, max_len_tweet: int, max_len_context: int):
     """
-    Tokenizer for the cross-attention model.
-    Context (hoax + root + parent) and tweet are tokenized separately.
+    Tokenize for the cross-attention model.
+
+    Tweet and context (hoax + root + parent) are tokenized separately with
+    different max lengths — context gets more room since it concatenates
+    three texts, tweet stays short since it's a single sentence.
+
+    Args:
+        dataset:         HuggingFace Dataset with "text", "hoax", "parent_text", "root_text".
+        tokenizer:       Matching tokenizer.
+        max_len_tweet:   Max tokens for the tweet (typically 128).
+        max_len_context: Max tokens for the concatenated context (typically 512).
     """
     def tokenize(example):
-        context = []
-        for h, r, p in zip(example["hoax"], example["root_text"], example["parent_text"]):
-            parts = []
-            if h and h.strip(): parts.append(f"Hoax: {h}")
-            if r and r.strip(): parts.append(f"Thread: {r}")
-            if p and p.strip(): parts.append(f"Reply to: {p}")
-            context.append(" | ".join(parts))
+        # Concatenate hoax + root + parent with separator tokens
+        context = [
+            h + tokenizer.sep_token + r + tokenizer.sep_token + p
+            for h, r, p in zip(example["hoax"], example["root_text"], example["parent_text"])
+        ]
+        ctx_enc   = tokenizer(context,          padding="max_length", truncation=True, max_length=max_len_context)
+        tweet_enc = tokenizer(example["text"],  padding="max_length", truncation=True, max_length=max_len_tweet)
 
-        ctx   = tokenizer(context,         truncation=True, padding="max_length", max_length=max_len)
-        tweet = tokenizer(example["text"], truncation=True, padding="max_length", max_length=max_len)
         return {
-            "context_input_ids":      ctx["input_ids"],
-            "context_attention_mask": ctx["attention_mask"],
-            "tweet_input_ids":        tweet["input_ids"],
-            "tweet_attention_mask":   tweet["attention_mask"],
+            "context_input_ids":      ctx_enc["input_ids"],
+            "context_attention_mask": ctx_enc["attention_mask"],
+            "tweet_input_ids":        tweet_enc["input_ids"],
+            "tweet_attention_mask":   tweet_enc["attention_mask"],
         }
+
     return dataset.map(tokenize, batched=True)
 
 def augment_with_backtranslation(df):

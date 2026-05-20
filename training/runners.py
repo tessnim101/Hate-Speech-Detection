@@ -258,8 +258,11 @@ def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weight
     df_train_ca = ids_to_text(df_train.copy())
     df_val_ca   = ids_to_text(df_val.copy())
 
-    train_ds = format_dataset(tokenize_cross_attention(prepare_dataset(df_train_ca, ["text", "hoax", "parent_text", "root_text"]), tokenizer, CONFIG["max_len"]), "cross_attention")
-    val_ds   = format_dataset(tokenize_cross_attention(prepare_dataset(df_val_ca,   ["text", "hoax", "parent_text", "root_text"]), tokenizer, CONFIG["max_len"]), "cross_attention")
+    max_len_ctx   = CONFIG.get("max_len_cross_attention_context", 512)
+    max_len_tweet = CONFIG["max_len"]
+
+    train_ds = format_dataset(tokenize_cross_attention(prepare_dataset(df_train_ca, ["text", "hoax", "parent_text", "root_text"]), tokenizer, max_len_tweet, max_len_ctx), "cross_attention")
+    val_ds   = format_dataset(tokenize_cross_attention(prepare_dataset(df_val_ca,   ["text", "hoax", "parent_text", "root_text"]), tokenizer, max_len_tweet, max_len_ctx), "cross_attention")
 
     model = CrossAttentionHoaxModel(CONFIG["model_name"])
     freeze_encoder_bottom_layers(model.encoder, n_layers=6)

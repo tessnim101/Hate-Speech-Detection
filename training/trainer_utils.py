@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from transformers import Trainer, TrainingArguments, DefaultDataCollator
 from sklearn.metrics import f1_score, accuracy_score
-from modeling.models import HierarchicalContextModel
+from modeling.models import HierarchicalContextModel, CrossAttentionHoaxModel
 
 
 class WeightedLossTrainer(Trainer):
@@ -97,7 +97,7 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         seed = 42,                       
     )
 
-    _is_custom = isinstance(model, HierarchicalContextModel)
+    _is_custom = isinstance(model, (HierarchicalContextModel, CrossAttentionHoaxModel))
     collator = DefaultDataCollator() if _is_custom else None
 
     class_weights  = config.get("class_weights")
