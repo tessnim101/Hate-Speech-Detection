@@ -3,17 +3,13 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from pathlib import Path
-
 import numpy as np
 import torch
-from safetensors.torch import load_file
-from transformers import AutoTokenizer
 
 from config import CONFIG
 from data.loader import load_data
 from data.preprocessing import filter_contextual_tweets, ids_to_text
 from utils.inference_utils import load_hierarchical, load_cross_attention
-
 from utils.inference_utils import enc
 
 
@@ -48,16 +44,19 @@ def run_hierarchical(model, tokenizer, df, batch_size, device):
         p_enc = enc(tokenizer, parent_texts[i:i+batch_size], CONFIG["max_len"], device)
         r_enc = enc(tokenizer, root_texts[i:i+batch_size],   CONFIG["max_len"], device)
 
-        probs, weights = model.forward_with_attn(
+        out = model(
             root_input_ids=        r_enc["input_ids"],
             root_attention_mask=   r_enc["attention_mask"],
             parent_input_ids=      p_enc["input_ids"],
             parent_attention_mask= p_enc["attention_mask"],
             tweet_input_ids=       t_enc["input_ids"],
             tweet_attention_mask=  t_enc["attention_mask"],
+            return_attention_weights=True,
         )
+
+        probs = torch.softmax(out["logits"], dim=-1)
         all_probs.append(probs.cpu().numpy())
-        all_weights.append(weights.cpu().numpy())
+        all_weights.append(out["attention_weights"].cpu().numpy())
 
     return np.vstack(all_probs), np.vstack(all_weights)
 
