@@ -2,17 +2,6 @@
 GPU back-translation using Helsinki-NLP/opus-mt MarianMT models.
 Translates text, hoax, parent_text, and root_text to fix the context
 mismatch in the original augmentation (all fields back-translated together).
-
-On RCP:
-    runai submit bt-translate \
-      --run-as-uid 244835 \
-      --image registry.rcp.epfl.ch/ee-559-bechrifa/my-toolbox:v0.7 \
-      --project course-ee-559-bechrifa \
-      --gpu 1 \
-      --existing-pvc claimname=home,path=/home/bechrifa \
-      -e HF_TOKEN=<token> \
-      --command -- python3 /home/bechrifa/Hate-Speech-Detection/translate.py \
-        --data_dir /home/bechrifa/Hate-Speech-Detection/data/spanish_subset/
 """
 
 import argparse

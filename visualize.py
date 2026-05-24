@@ -159,7 +159,7 @@ def main():
     plt.tight_layout()
     out = res_dir / "model_comparison.png"
     plt.savefig(out, dpi=150, bbox_inches="tight")
-    print(f"\nSaved → {out}")
+    print(f"\nSaved -> {out}")
 
     print_summary(test_df, available)
 
