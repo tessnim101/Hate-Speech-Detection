@@ -1,10 +1,10 @@
 """
-Run training for both the baseline and the hierearchical (context-aware) model.
+Run training for baseline, hierarchical, cross-attention, and augmented models.
 
-python main.py \
+python3 main.py \
     --dataset_path "data/spanish_subset/" \
     --results_path "results/" \
-    --imbalance_strategy "oversample"
+    --imbalance_strategy "class_weights"
 """
 
 import os
@@ -17,30 +17,26 @@ import numpy as np
 import torch
 
 from data.loader import load_data
-from data.preprocessing import filter_contextual_tweets, split_train_validation
+from data.preprocessing import filter_contextual_tweets, split_train_validation, clean_df
 from utils.imbalance import compute_class_weights, oversample_minority_classes
 from training.runners import run_baseline, run_hierarchical, run_augmented, run_cross_attention
+
 
 def set_seed(seed: int):
     """
     Fix all sources of randomness for reproducible training.
-    Does not eliminate run-to-run variance entirely on GPU (CUDA
-    non-determinism) but makes results as stable as possible.
+    Note: cudnn.benchmark is disabled to avoid non-deterministic
+    algorithm selection — this trades a small speed cost for reproducibility.
     """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # Forces cuDNN to use deterministic algorithms — small performance cost
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark     = False
+    torch.backends.cudnn.benchmark     = False  # must be False when deterministic=True
 
 
 def parse_args():
-    """
-    Parse path to dataset, path to results folder and imbalance
-    strategy (oversample or class weights, see utils/imbalance.py)
-    """
     p = argparse.ArgumentParser()
     p.add_argument("--dataset_path",  required=True)
     p.add_argument("--results_path",  required=True)
@@ -62,6 +58,11 @@ if __name__ == "__main__":
     os.makedirs(Path(RES_DIR) / "checkpoints", exist_ok=True)
 
     df_train, df_test = load_data(DATADIR)
+
+    # Clean text (lowercase, remove URLs/mentions/punctuation)
+    df_train = clean_df(df_train)
+    df_test  = clean_df(df_test)
+
     # Keep only tweets that have both parent and root tweets
     df_train = filter_contextual_tweets(df_train)
     df_test  = filter_contextual_tweets(df_test)
@@ -85,18 +86,22 @@ if __name__ == "__main__":
         print(f"[device] {n_gpus} GPU(s): "
               + ", ".join(torch.cuda.get_device_name(i) for i in range(n_gpus)))
 
-    # run_baseline(
-    #     df_train_split, df_val_split, df_test,
-    #     run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
-    # )
-    # run_hierarchical(
-    #     df_train_split, df_val_split, df_test,
-    #     run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
-    # )
+    print("RUNNING BASELINE")
+    run_baseline(
+        df_train_split, df_val_split, df_test,
+        run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
+    )
+    print("RUNNING HIERARCHICAL")
+    run_hierarchical(
+        df_train_split, df_val_split, df_test,
+        run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
+    )
+    print("RUNNING CROSS-ATTENTION")
     run_cross_attention(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
     )
+    print("RUNNING AUGMENTED")
     run_augmented(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
