@@ -194,13 +194,26 @@ def tokenize_cross_attention(
 # Augmentation
 def augment_with_backtranslation(df):
     """
-    Expand the training set by appending back-translated tweets as new rows.
+    Expand the training set by appending back-translated rows.
 
-    For each row where backtranslated_text is non-empty, a copy of the row is
-    created with text replaced by the back-translated version and the same label.
+    For each row where backtranslated_text is non-empty, a copy is created with
+    text, parent_text, and root_text replaced by their back-translated versions
+    (looked up by level2/level3 comment_id). Falls back to original if a
+    parent/root tweet was not back-translated.
     """
+    id_to_bt = df[["comment_id", "backtranslated_text"]].rename(
+        columns={"comment_id": "lookup_id", "backtranslated_text": "lookup_bt"}
+    )
+
     bt_rows = df[df["backtranslated_text"].ne("")].copy()
     bt_rows["text"] = bt_rows["backtranslated_text"]
+
+    for level, col in [("level2", "parent_text"), ("level3", "root_text")]:
+        bt_rows = bt_rows.merge(id_to_bt, left_on=level, right_on="lookup_id", how="left").drop(columns=["lookup_id"])
+        bt_rows["lookup_bt"] = bt_rows["lookup_bt"].fillna("")
+        bt_rows[col] = bt_rows["lookup_bt"].where(bt_rows["lookup_bt"].ne(""), bt_rows[col])
+        bt_rows = bt_rows.drop(columns=["lookup_bt"])
+
     augmented = pd.concat([df, bt_rows], ignore_index=True)
     print(f"[augment] Added {len(bt_rows):,} back-translated rows → {len(augmented):,} total.")
     return augmented

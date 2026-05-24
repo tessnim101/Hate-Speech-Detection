@@ -44,6 +44,17 @@ class WeightedLossTrainer(Trainer):
         inputs["labels"] = labels
         return (loss, outputs) if return_outputs else loss
 
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        inputs = self._prepare_inputs(inputs)
+        labels = inputs.get("labels")
+        with torch.no_grad():
+            loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+        loss = loss.detach()
+        if prediction_loss_only:
+            return (loss, None, None)
+        logits = outputs["logits"] if isinstance(outputs, dict) else outputs.logits
+        return (loss, logits.detach(), labels.detach() if labels is not None else None)
+
 
 class FocalLossTrainer(Trainer):
     """
@@ -84,6 +95,17 @@ class FocalLossTrainer(Trainer):
         loss = (focal_weight * ce_loss).mean()
         inputs["labels"] = labels
         return (loss, outputs) if return_outputs else loss
+
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        inputs = self._prepare_inputs(inputs)
+        labels = inputs.get("labels")
+        with torch.no_grad():
+            loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+        loss = loss.detach()
+        if prediction_loss_only:
+            return (loss, None, None)
+        logits = outputs["logits"] if isinstance(outputs, dict) else outputs.logits
+        return (loss, logits.detach(), labels.detach() if labels is not None else None)
 
 
 def compute_metrics(eval_pred):
