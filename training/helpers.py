@@ -1,12 +1,5 @@
 """
 Shared utilities used across training runners and inference.
-
-Contains four groups of helpers:
-- EpochMetricsCallback: collects per-epoch train + val metrics for CSV logging.
-- freeze_encoder_bottom_layers: partial freezing to reduce overfitting on small datasets.
-- Dataset helpers: convert raw DataFrames into tokenized, torch-formatted HuggingFace datasets.
-- Persistence helpers: append-only CSV writers and hierarchical model serialization.
-- Evaluation helper: tokenizes the test set and runs Trainer.evaluate().
 """
 
 import os
@@ -45,18 +38,13 @@ class EpochMetricsCallback(TrainerCallback):
 
 
 def freeze_encoder_bottom_layers(model, n_layers=6):
-    """
-    Freeze the embedding layer and the bottom n_layers transformer blocks.
-
-    Freezing lower layers reduces overfitting on small datasets by limiting
-    the number of trainable parameters while keeping the upper layers, which
-    encode more task-specific features, adaptable.
-
-    Args:
-        model: Model or encoder module to partially freeze.
-        n_layers: Number of transformer layers to freeze from the bottom.
-    """
-    base = getattr(model, "roberta", model)
+    # Baseline: AutoModelForSequenceClassification has .roberta
+    # Hierarchical/CrossAttention: model.encoder is passed directly,
+    # which already has .embeddings and .encoder.layer at top level
+    if hasattr(model, "roberta"):
+        base = model.roberta
+    else:
+        base = model  # already the raw encoder
 
     for param in base.embeddings.parameters():
         param.requires_grad = False
@@ -96,14 +84,14 @@ def format_dataset(dataset, model_type="baseline"):
     Set the dataset output format to torch tensors, keeping only model-relevant columns.
 
     Args:
-        dataset: Tokenized HuggingFace Dataset.
-        model_type: "baseline" , "hierarchical" or "cross_attention"
+        dataset:    Tokenized HuggingFace Dataset.
+        model_type: "baseline", "hierarchical", "augmented", or "cross_attention".
 
     Returns:
-        The same dataset with torch format.
+        The same dataset with torch format applied in-place.
     """
     columns = {
-        "baseline":     ["input_ids", "attention_mask", "labels"],
+        "baseline": ["input_ids", "attention_mask", "labels"],
         "hierarchical": [
             "root_input_ids",   "root_attention_mask",
             "parent_input_ids", "parent_attention_mask",
@@ -116,6 +104,7 @@ def format_dataset(dataset, model_type="baseline"):
             "labels",
         ],
     }
+    # augmented uses the same architecture and columns as hierarchical
     key = "hierarchical" if model_type == "augmented" else model_type
     dataset.set_format(type="torch", columns=columns[key])
     return dataset
@@ -200,8 +189,8 @@ def evaluate_on_test(trainer, df_test, tokenizer, model_type):
 
     elif model_type == "cross_attention":
         df_test = ids_to_text(df_test.copy())
-        test_ds = prepare_dataset(df_test, ["text", "hoax", "parent_text", "root_text"])
-        test_ds = tokenize_cross_attention(test_ds, tokenizer, CONFIG["max_len"])
+        test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
+        test_ds = tokenize_cross_attention(test_ds, tokenizer, CONFIG["max_len_tweet"], CONFIG["max_len_context"])
         test_ds = format_dataset(test_ds, "cross_attention")
 
     else:
