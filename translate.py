@@ -26,7 +26,7 @@ from tqdm import tqdm
 from data.loader import load_data
 from data.preprocessing import ids_to_text
 
-COLUMNS = ["text", "hoax", "parent_text", "root_text"]
+COLUMNS = ["hoax"]
 
 
 def load_model(src: str, tgt: str, device: str):
@@ -87,28 +87,38 @@ def main():
     print(f"[device] {args.device}")
 
     df_train, _ = load_data(args.data_dir)
-    df = ids_to_text(df_train.copy())
-    print(f"Loaded {len(df)} training rows")
+    print(f"Loaded {len(df_train)} training rows")
+
+    # Derive bt_text, bt_parent_text, bt_root_text from existing train_bt.csv
+    # (parent and root are tweets already in the dataset, so we reuse their translations)
+    bt_path = Path(args.data_dir) / "train_bt.csv"
+    if not bt_path.exists():
+        raise FileNotFoundError(f"Existing back-translation file not found: {bt_path}")
+    bt_existing = pd.read_csv(bt_path).rename(columns={"backtranslated_text": "bt_text"})
+    bt_lookup = bt_existing.set_index("comment_id")["bt_text"].to_dict()
+
+    out = pd.DataFrame({"comment_id": df_train["comment_id"]})
+    out["bt_text"]        = df_train["comment_id"].map(bt_lookup).fillna("")
+    out["bt_parent_text"] = df_train["level2"].map(bt_lookup).fillna("")
+    out["bt_root_text"]   = df_train["level3"].map(bt_lookup).fillna("")
+    print(f"[reused] bt_text / bt_parent_text / bt_root_text from {bt_path}")
 
     print("\nLoading translation models...")
     es_en = load_model("es", "en", args.device)
     en_es = load_model("en", "es", args.device)
 
-    out = pd.DataFrame({"comment_id": df["comment_id"]})
-
     for col in COLUMNS:
-        if col not in df.columns:
+        if col not in df_train.columns:
             print(f"Skipping {col} (not found)")
             continue
         print(f"\nBack-translating: {col}")
         out[f"bt_{col}"] = back_translate(
-            df[col].fillna("").tolist(),
+            df_train[col].fillna("").tolist(),
             es_en, en_es, args.device, args.batch_size, args.max_len,
         )
 
-    out_path = Path(args.data_dir) / "train_bt.csv"
-    out.to_csv(out_path, index=False)
-    print(f"\n[saved] {out_path}  ({len(out)} rows, cols: {list(out.columns)})")
+    out.to_csv(bt_path, index=False)
+    print(f"\n[saved] {bt_path}  ({len(out)} rows, cols: {list(out.columns)})")
 
 
 if __name__ == "__main__":

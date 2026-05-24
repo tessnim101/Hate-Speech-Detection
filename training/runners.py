@@ -204,7 +204,7 @@ def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None
         res_dir:       Output directory for checkpoints and result files.
         class_weights: Optional weight tensor containing class weights.
     """
-    if df_train["backtranslated_text"].eq("").all():
+    if df_train["bt_text"].eq("").all():
         print("[augmented] 'backtranslated_text' column is empty — "
               "run translate.py first. Skipping run_augmented.")
         return
