@@ -152,14 +152,17 @@ def tokenize_cross_attention(dataset, tokenizer, max_len_tweet: int, max_len_con
 
 def augment_with_backtranslation(df):
     """
-    Expand the training set by appending back-translated tweets as new rows.
+    Expand the training set by appending back-translated rows.
 
-    For each row where backtranslated_text is non-empty, a copy of the row is
-    created with text replaced by the back-translated version and the same label.
-    This follows the data-augmentation approach from Beddiar et al. (2021).
+    For each row where bt_text is non-empty, a copy is created with text,
+    hoax, parent_text, and root_text all replaced by their back-translated
+    versions, fixing the context mismatch in the original augmentation.
     """
-    bt_rows = df[df["backtranslated_text"].ne("")].copy()
-    bt_rows["text"] = bt_rows["backtranslated_text"]
+    bt_rows = df[df["bt_text"].ne("")].copy()
+    for col in ["text", "hoax", "parent_text", "root_text"]:
+        bt_col = f"bt_{col}"
+        if bt_col in bt_rows.columns:
+            bt_rows[col] = bt_rows[bt_col].where(bt_rows[bt_col].ne(""), bt_rows[col])
     augmented = pd.concat([df, bt_rows], ignore_index=True)
     print(f"[augment] Added {len(bt_rows):,} back-translated rows → {len(augmented):,} total.")
     return augmented

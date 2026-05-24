@@ -104,8 +104,10 @@ def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None)
 
     run_config = {
         **CONFIG,
-        "learning_rate": 1.5e-5,
-        "weight_decay":  0.025,
+        "learning_rate": 1e-5,
+        "weight_decay":  0.0025,
+        "warmup_ratio":  0.2,
+        "max_grad_norm": 1.0,
         "metrics_fn":    compute_metrics,
         "class_weights": class_weights,
         "output_dir":    str(Path(res_dir) / "checkpoints"),
@@ -165,9 +167,9 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
 
     run_config = {
         **CONFIG,
-        "learning_rate": 2e-5,
+        "learning_rate": 1e-5,
         "weight_decay":  0.0025,
-        "warmup_ratio":  0.1,
+        "warmup_ratio":  0.2,
         "max_grad_norm": 1.0,
         "metrics_fn":    compute_metrics,
         "class_weights": class_weights,
@@ -232,9 +234,9 @@ def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None
 
     run_config = {
         **CONFIG,
-        "learning_rate": 2e-5,
+        "learning_rate": 1e-5,
         "weight_decay":  0.0025,
-        "warmup_ratio":  0.1,
+        "warmup_ratio":  0.2,
         "max_grad_norm": 1.0,
         "metrics_fn":    compute_metrics,
         "class_weights": class_weights,
@@ -269,9 +271,9 @@ def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weight
 
     run_config = {
         **CONFIG,
-        "learning_rate": 2e-5,
+        "learning_rate": 1e-5,
         "weight_decay":  0.0025,
-        "warmup_ratio":  0.1,
+        "warmup_ratio":  0.2,
         "max_grad_norm": 1.0,
         "metrics_fn":    compute_metrics,
         "class_weights": class_weights,

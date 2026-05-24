@@ -12,7 +12,7 @@ def load_model(model_name: str, num_labels: int = 2):
     Load pre-trained model.
     """
     return AutoModelForSequenceClassification.from_pretrained(
-        model_name, num_labels=num_labels
+        model_name, num_labels=num_labels, use_safetensors=True
     )
 
 
@@ -28,7 +28,7 @@ class HierarchicalContextModel(nn.Module):
 
     def __init__(self, model_name: str, num_labels: int = 2, dropout: float = 0.05):
         super().__init__()
-        self.encoder = AutoModel.from_pretrained(model_name)
+        self.encoder = AutoModel.from_pretrained(model_name, use_safetensors=True)
         hidden = self.encoder.config.hidden_size  # 768 for XLM-RoBERTa base
 
         # 4 positions: hoax, root, parent, tweet
@@ -125,13 +125,13 @@ class CrossAttentionHoaxModel(nn.Module):
         self,
         model_name:  str,
         num_labels:  int   = 2,
-        hidden_dim:  int   = 256,
+        hidden_dim:  int   = 384,
         num_heads:   int   = 8,
-        dropout:     float = 0.1,
+        dropout:     float = 0.05,
     ) -> None:
         super().__init__()
 
-        self.encoder   = AutoModel.from_pretrained(model_name)
+        self.encoder   = AutoModel.from_pretrained(model_name, use_safetensors=True)
         self.num_labels = num_labels
         hidden = self.encoder.config.hidden_size  # 768
 
