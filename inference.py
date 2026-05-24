@@ -1,16 +1,16 @@
 """
 Inference and analysis script.
 
-Evaluates baseline and context-aware models on the test set and compares
-their predictions sample-by-sample. Designed to be run once per training
-seed so that results accumulate in inference_summary.csv for multi-run
-statistical analysis (see visualize_results.py).
+Evaluates baseline, hierarchical, and cross-attention models on the test set
+and compares their predictions sample-by-sample.
 
-python inference.py --dataset_path  "data/spanish_subset/" \
-                    --baseline_path "results/best_model_baseline" \
-                    --context_path  "results/best_model_context" \
-                    --results_path  "results/" \
-                    --run_id        "0"
+python3 inference.py \
+    --dataset_path          "data/spanish_subset/" \
+    --baseline_path         "results/best_model_baseline/" \
+    --context_path          "results/best_model_context/" \
+    --cross_attention_path  "results/best_model_cross_attention/" \
+    --results_path          "results/" \
+    --run_id                "0"
 """
 
 import argparse
@@ -19,7 +19,6 @@ from pathlib import Path
 import torch
 import numpy as np
 import pandas as pd
-from safetensors.torch import load_file
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from sklearn.metrics import (
     accuracy_score,
@@ -29,80 +28,44 @@ from sklearn.metrics import (
     classification_report,
 )
 
+from config import CONFIG
 from data.loader import load_data
 from data.preprocessing import ids_to_text, filter_contextual_tweets
-from modeling.models import HierarchicalContextModel
-from config import CONFIG
+from utils.inference_utils import enc, load_hierarchical, load_cross_attention
 
-
-# ---------------------------------------------------------------------------
-# Argument parsing
-# ---------------------------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset_path",  required=True)
-    p.add_argument("--baseline_path", required=True, help="Path to best_model_baseline/")
-    p.add_argument("--context_path",  required=True, help="Path to best_model_context/")
-    p.add_argument("--results_path",  required=True, help="Directory to write CSVs")
-    p.add_argument("--batch_size",    type=int, default=32)
-    p.add_argument("--run_id",        type=str, default="0",
-                   help="Seed/run identifier — used as a key when aggregating across runs")
+    p.add_argument("--dataset_path",         required=True)
+    p.add_argument("--baseline_path",        required=True)
+    p.add_argument("--context_path",         required=True)
+    p.add_argument("--cross_attention_path", required=True)
+    p.add_argument("--results_path",         required=True)
+    p.add_argument("--batch_size",           type=int, default=32)
+    p.add_argument("--run_id",               type=str, default="0")
     return p.parse_args()
 
 
-# ---------------------------------------------------------------------------
-# Inference helpers
-# ---------------------------------------------------------------------------
-
 def get_device():
-    """
-    Return a CUDA device if available, otherwise CPU.
-    """
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def batch_texts(texts, batch_size):
-    """
-    Yield successive slices of texts of length batch_size.
-    """
-    for i in range(0, len(texts), batch_size):
-        yield texts[i : i + batch_size]
+def batch_iter(lst, batch_size):
+    for i in range(0, len(lst), batch_size):
+        yield lst[i : i + batch_size]
 
 
 @torch.no_grad()
-def predict_baseline(model, tokenizer, texts, batch_size, device):
-    """
-    Run batched inference with the baseline AutoModelForSequenceClassification.
-
-    Args:
-        model: Loaded baseline model in eval mode.
-        tokenizer: Matching tokenizer.
-        texts: List of raw tweet strings.
-        batch_size: Number of samples per forward pass.
-        device: torch.device to run inference on.
-
-    Returns:
-        preds: Integer array of shape (N,) with predicted class indices.
-        probs: Float array of shape (N, num_classes) with softmax probabilities.
-    """
+def predict_baseline(model, tokenizer, df, batch_size, device):
+    """Batched inference for the baseline model (tweet text only)."""
     model.eval()
     all_preds, all_probs = [], []
 
-    for batch in batch_texts(texts, batch_size):
-        enc = tokenizer(
-            batch,
-            padding=True,
-            truncation=True,
-            max_length=CONFIG["max_len"],
-            return_tensors="pt",
-        ).to(device)
-
-        logits = model(**enc).logits
+    for batch in batch_iter(df["text"].tolist(), batch_size):
+        e      = enc(tokenizer, batch, CONFIG["max_len"], device)
+        logits = model(**e).logits
         probs  = torch.softmax(logits, dim=-1)
-        preds  = logits.argmax(dim=-1)
-
-        all_preds.extend(preds.cpu().tolist())
+        all_preds.extend(logits.argmax(dim=-1).cpu().tolist())
         all_probs.extend(probs.cpu().tolist())
 
     return np.array(all_preds), np.array(all_probs)
@@ -111,21 +74,9 @@ def predict_baseline(model, tokenizer, texts, batch_size, device):
 @torch.no_grad()
 def predict_hierarchical(model, tokenizer, df, batch_size, device):
     """
-    Run batched inference with the hierarchical context-aware model.
-
-    Each batch tokenizes tweet, parent, and root texts independently and passes
-    them as separate inputs, matching the forward() signature of HierarchicalContextModel.
-
-    Args:
-        model: Loaded HierarchicalContextModel in eval mode.
-        tokenizer: Matching tokenizer.
-        df: DataFrame with "text", "parent_text", and "root_text" columns.
-        batch_size: Number of samples per forward pass.
-        device: torch.device to run inference on.
-
-    Returns:
-        preds: Integer array of shape (N,) with predicted class indices.
-        probs: Float array of shape (N, num_classes) with softmax probabilities.
+    Batched inference for the hierarchical model.
+    Encodes tweet, parent, and root separately.
+    level4 (hoax) is intentionally excluded.
     """
     model.eval()
     all_preds, all_probs = [], []
@@ -135,60 +86,70 @@ def predict_hierarchical(model, tokenizer, df, batch_size, device):
     root_texts   = df["root_text"].tolist()
 
     for i in range(0, len(texts), batch_size):
-        t_batch = texts[i        : i + batch_size]
-        p_batch = parent_texts[i : i + batch_size]
-        r_batch = root_texts[i   : i + batch_size]
-
-        def enc(batch):
-            """
-            Tokenize a single text batch and move to device.
-            """
-            return tokenizer(
-                batch,
-                padding=True,
-                truncation=True,
-                max_length=CONFIG["max_len"],
-                return_tensors="pt",
-            ).to(device)
-
-        tweet_enc  = enc(t_batch)
-        parent_enc = enc(p_batch)
-        root_enc   = enc(r_batch)
+        t_enc = enc(tokenizer, texts[i:i+batch_size],        CONFIG["max_len"], device)
+        p_enc = enc(tokenizer, parent_texts[i:i+batch_size], CONFIG["max_len"], device)
+        r_enc = enc(tokenizer, root_texts[i:i+batch_size],   CONFIG["max_len"], device)
 
         out = model(
-            tweet_input_ids=tweet_enc["input_ids"],
-            tweet_attention_mask=tweet_enc["attention_mask"],
-            parent_input_ids=parent_enc["input_ids"],
-            parent_attention_mask=parent_enc["attention_mask"],
-            root_input_ids=root_enc["input_ids"],
-            root_attention_mask=root_enc["attention_mask"],
+            tweet_input_ids=       t_enc["input_ids"],
+            tweet_attention_mask=  t_enc["attention_mask"],
+            parent_input_ids=      p_enc["input_ids"],
+            parent_attention_mask= p_enc["attention_mask"],
+            root_input_ids=        r_enc["input_ids"],
+            root_attention_mask=   r_enc["attention_mask"],
         )
 
         logits = out["logits"]
         probs  = torch.softmax(logits, dim=-1)
-        preds  = logits.argmax(dim=-1)
-
-        all_preds.extend(preds.cpu().tolist())
+        all_preds.extend(logits.argmax(dim=-1).cpu().tolist())
         all_probs.extend(probs.cpu().tolist())
 
     return np.array(all_preds), np.array(all_probs)
 
 
-# ---------------------------------------------------------------------------
-# Metrics
-# ---------------------------------------------------------------------------
+@torch.no_grad()
+def predict_cross_attention(model, tokenizer, df, batch_size, device):
+    """
+    Batched inference for the cross-attention model.
+    Context (root + parent) and tweet are encoded separately.
+    level4 (hoax) is intentionally excluded.
+    """
+    model.eval()
+    all_preds, all_probs = [], []
+
+    texts        = df["text"].tolist()
+    root_texts   = df["root_text"].tolist()
+    parent_texts = df["parent_text"].tolist()
+
+    for i in range(0, len(texts), batch_size):
+        t_b = texts[i:i+batch_size]
+        r_b = root_texts[i:i+batch_size]
+        p_b = parent_texts[i:i+batch_size]
+
+        context = [
+            tokenizer.sep_token.join(x for x in [r, p] if x and str(x).strip())
+            for r, p in zip(r_b, p_b)
+        ]
+
+        ctx_enc = enc(tokenizer, context, CONFIG["max_len_context"], device)
+        twt_enc = enc(tokenizer, t_b,     CONFIG["max_len_tweet"],   device)
+
+        out = model(
+            context_input_ids=      ctx_enc["input_ids"],
+            context_attention_mask= ctx_enc["attention_mask"],
+            tweet_input_ids=        twt_enc["input_ids"],
+            tweet_attention_mask=   twt_enc["attention_mask"],
+        )
+
+        logits = out["logits"]
+        probs  = torch.softmax(logits, dim=-1)
+        all_preds.extend(logits.argmax(dim=-1).cpu().tolist())
+        all_probs.extend(probs.cpu().tolist())
+
+    return np.array(all_preds), np.array(all_probs)
+
 
 def compute_metrics(labels, preds):
-    """
-    Compute a standard set of classification metrics.
-
-    Args:
-        labels: Ground-truth integer array.
-        preds: Predicted integer array.
-
-    Returns:
-        Dict of metric name → scalar value.
-    """
     return {
         "accuracy":  accuracy_score(labels, preds),
         "f1_macro":  f1_score(labels, preds, average="macro",  zero_division=0),
@@ -201,123 +162,104 @@ def compute_metrics(labels, preds):
     }
 
 
-# ---------------------------------------------------------------------------
-# Reporting
-# ---------------------------------------------------------------------------
-
 def print_section(title):
-    """
-    Print a section header to stdout for readability.
-    """
     print(f"\n{'='*60}")
     print(f"  {title}")
     print(f"{'='*60}")
 
 
 def print_metrics(metrics: dict):
-    """
-    Pretty-print a metrics dict, formatting floats to 4 decimal places.
-    """
     for k, v in metrics.items():
         print(f"  {k:<25} {v:.4f}" if isinstance(v, float) else f"  {k:<25} {v}")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     args   = parse_args()
     device = get_device()
-    print(f"[device] Using {device}")
+    print(f"[device] {device}")
 
-    # ---- Load and filter test data ---------------------------------------
-    # Drop rows without parent/root context to remain consistent with training
     _, df_test = load_data(args.dataset_path)
     df_test    = filter_contextual_tweets(df_test)
+    df_test    = ids_to_text(df_test.copy())
     labels     = df_test["stereotype"].values
 
-    # ---- Baseline --------------------------------------------------------
-    print_section("Baseline model")
-
+    # baseline
+    print_section("Baseline")
     baseline_tokenizer = AutoTokenizer.from_pretrained(args.baseline_path)
     baseline_model     = AutoModelForSequenceClassification.from_pretrained(
         args.baseline_path
-    ).to(device)
+    ).to(device).eval()
 
     baseline_preds, baseline_probs = predict_baseline(
-        baseline_model, baseline_tokenizer,
-        df_test["text"].tolist(), args.batch_size, device,
+        baseline_model, baseline_tokenizer, df_test, args.batch_size, device,
     )
-
     baseline_metrics = compute_metrics(labels, baseline_preds)
     print_metrics(baseline_metrics)
-    print("\nClassification report:")
     print(classification_report(labels, baseline_preds, zero_division=0))
 
-    # ---- Context-aware (hierarchical) ------------------------------------
-    print_section("Context-aware model")
+    # hierarchical model
+    print_section("Hierarchical")
+    hier_model, hier_tokenizer = load_hierarchical(args.context_path, device)
 
-    context_tokenizer = AutoTokenizer.from_pretrained(args.context_path)
-    context_model     = HierarchicalContextModel(CONFIG["model_name"]).to(device)
-    weights = load_file(str(Path(args.context_path) / "model.safetensors"), device=str(device))
-    context_model.load_state_dict(weights)
-
-    df_test_ctx = ids_to_text(df_test.copy())
-
-    context_preds, context_probs = predict_hierarchical(
-        context_model, context_tokenizer,
-        df_test_ctx, args.batch_size, device,
+    hier_preds, hier_probs = predict_hierarchical(
+        hier_model, hier_tokenizer, df_test, args.batch_size, device,
     )
+    hier_metrics = compute_metrics(labels, hier_preds)
+    print_metrics(hier_metrics)
+    print(classification_report(labels, hier_preds, zero_division=0))
 
-    context_metrics = compute_metrics(labels, context_preds)
-    print_metrics(context_metrics)
-    print("\nClassification report:")
-    print(classification_report(labels, context_preds, zero_division=0))
+    # cross-attention model
+    print_section("Cross-Attention")
+    ca_model, ca_tokenizer = load_cross_attention(args.cross_attention_path, device)
 
-    # ---- Delta -----------------------------------------------------------
-    print_section("Context vs Baseline")
-    for k in ["accuracy", "f1_macro", "f1_binary", "f1_class0", "f1_class1"]:
-        delta = context_metrics[k] - baseline_metrics[k]
-        print(f"  {k:<25} {delta:+.4f}")
+    ca_preds, ca_probs = predict_cross_attention(
+        ca_model, ca_tokenizer, df_test, args.batch_size, device,
+    )
+    ca_metrics = compute_metrics(labels, ca_preds)
+    print_metrics(ca_metrics)
+    print(classification_report(labels, ca_preds, zero_division=0))
+    print_section("Deltas vs Baseline")
+    for k in ["accuracy", "f1_macro", "f1_class0", "f1_class1"]:
+        print(f"  {'Hierarchical':<20} {k:<15} {hier_metrics[k] - baseline_metrics[k]:+.4f}")
+        print(f"  {'Cross-Attention':<20} {k:<15} {ca_metrics[k]  - baseline_metrics[k]:+.4f}")
 
-    # ---- Per-sample results ----------------------------------------------
-    # verdict column classifies each sample into one of three outcomes:
-    #   context_wins — context model correct, baseline wrong
-    #   baseline_wins — baseline correct, context model wrong
-    #   tie — both models agree (right or wrong)
     df_results = df_test[["text", "stereotype"]].copy()
-    df_results["baseline_pred"] = baseline_preds
-    df_results["baseline_prob1"] = baseline_probs[:, 1]  
-    df_results["context_pred"] = context_preds
-    df_results["context_prob1"] = context_probs[:, 1]
+
+    df_results["baseline_pred"]    = baseline_preds
+    df_results["baseline_prob1"]   = baseline_probs[:, 1]
+    df_results["hier_pred"]        = hier_preds
+    df_results["hier_prob1"]       = hier_probs[:, 1]
+    df_results["ca_pred"]          = ca_preds
+    df_results["ca_prob1"]         = ca_probs[:, 1]
+
     df_results["baseline_correct"] = (baseline_preds == labels).astype(int)
-    df_results["context_correct"] = (context_preds  == labels).astype(int)
+    df_results["hier_correct"]     = (hier_preds     == labels).astype(int)
+    df_results["ca_correct"]       = (ca_preds       == labels).astype(int)
+
     df_results["verdict"] = "tie"
     df_results.loc[
-        (df_results["context_correct"] == 1) & (df_results["baseline_correct"] == 0),
+        (df_results["ca_correct"] == 1) & (df_results["baseline_correct"] == 0),
         "verdict"
     ] = "context_wins"
     df_results.loc[
-        (df_results["context_correct"] == 0) & (df_results["baseline_correct"] == 1),
+        (df_results["ca_correct"] == 0) & (df_results["baseline_correct"] == 1),
         "verdict"
     ] = "baseline_wins"
 
-    print("\nVerdict breakdown:")
+    print("\nVerdict breakdown (cross-attention vs baseline):")
     print(df_results["verdict"].value_counts().to_string())
 
-    # ---- Save results ----------------------------------------------------
     res_dir = Path(args.results_path)
     res_dir.mkdir(parents=True, exist_ok=True)
 
-    # Full per-sample predictions (useful for error analysis)
     per_sample_path = res_dir / "inference_per_sample.csv"
     df_results.to_csv(per_sample_path, index=False)
     print(f"\n[saved] Per-sample results → {per_sample_path}")
 
     rows = [
-        {"run_id": args.run_id, "model": "baseline", **baseline_metrics},
-        {"run_id": args.run_id, "model": "context",  **context_metrics},
+        {"run_id": args.run_id, "model": "baseline",        **baseline_metrics},
+        {"run_id": args.run_id, "model": "context",         **hier_metrics},
+        {"run_id": args.run_id, "model": "cross_attention", **ca_metrics},
     ]
     summary_df   = pd.DataFrame(rows)
     summary_path = res_dir / "inference_summary.csv"
