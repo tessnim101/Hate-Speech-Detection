@@ -1,9 +1,8 @@
 """
-Visualize and compare baseline, hierarchical, and backtranslation model results.
+Visualize and compare baseline and context aware models 
 
 Usage:
     python3 visualize.py --results_path results/
-    python3 visualize.py --results_path /home/bechrifa/Hate-Speech-Detection/results/
 """
 
 import argparse
@@ -14,9 +13,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-MODEL_ORDER  = ["baseline", "hierarchical", "cross_attention", "augmented"]
-MODEL_LABELS = {"baseline": "Baseline", "hierarchical": "Hierarchical", "cross_attention": "Cross-Attention", "augmented": "BT-Augmented"}
-COLORS       = {"baseline": "#4C72B0", "hierarchical": "#DD8452", "cross_attention": "#9467BD", "augmented": "#55A868"}
+MODEL_ORDER  = ["baseline", "hierarchical", "augmented", "cross_attention"]
+MODEL_LABELS = {
+    "baseline":        "Baseline",
+    "hierarchical":    "Hierarchical",
+    "augmented":       "BT-Augmented",
+    "cross_attention": "Cross-Attention",
+}
+COLORS = {
+    "baseline":        "#4C72B0",
+    "hierarchical":    "#DD8452",
+    "augmented":       "#55A868",
+    "cross_attention": "#8B5CF6",
+}
 
 METRICS = {
     "eval_f1_macro":  "F1 Macro",
