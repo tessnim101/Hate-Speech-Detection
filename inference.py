@@ -29,15 +29,13 @@ from sklearn.metrics import (
     classification_report,
 )
 
+from analysis.interpretability_extended import HierarchicalWithAttention
 from data.loader import load_data
 from data.preprocessing import ids_to_text, filter_contextual_tweets
 from modeling.models import HierarchicalContextModel, CrossAttentionContextModel
+from utils.inference_utils import enc
 from config import CONFIG
 
-
-# ---------------------------------------------------------------------------
-# Argument parsing
-# ---------------------------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -51,10 +49,7 @@ def parse_args():
     return p.parse_args()
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
-
 def get_device():
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -62,21 +57,8 @@ def get_device():
 def batch_iter(lst, batch_size):
     for i in range(0, len(lst), batch_size):
         yield lst[i : i + batch_size]
+    
 
-
-def enc(tokenizer, texts, max_len, device):
-    return tokenizer(
-        texts,
-        padding=True,
-        truncation=True,
-        max_length=max_len,
-        return_tensors="pt",
-    ).to(device)
-
-
-# ---------------------------------------------------------------------------
-# Inference
-# ---------------------------------------------------------------------------
 
 @torch.no_grad()
 def predict_baseline(model, tokenizer, df, batch_size, device):
