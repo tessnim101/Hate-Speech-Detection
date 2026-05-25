@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModel, AutoModelForSequenceClassification
+from transformers.modeling_outputs import SequenceClassifierOutput
 from typing import Optional
 
 
@@ -14,7 +15,7 @@ def load_model(model_name: str, num_labels: int = 2):
 def mean_pool(hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
     """
     Mean-pool token embeddings over non-padding positions.
-    More robust than CLS-only when sequences vary in length.
+    Kept for use in IG wrappers in token_attention.py.
     """
     mask = attention_mask.unsqueeze(-1).float()          # (B, L, 1)
     summed = (hidden_states * mask).sum(dim=1)           # (B, H)
@@ -43,7 +44,7 @@ class HierarchicalContextModel(nn.Module):
         self,
         model_name:      str,
         num_labels:      int   = 2,
-        dropout:         float = 0.1,
+        dropout:         float = 0.2,
         use_soft_labels: bool  = False,
     ):
         super().__init__()
@@ -80,22 +81,22 @@ class HierarchicalContextModel(nn.Module):
         )
 
     def encode(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        """Mean-pool token representations for a batch of texts."""
+        """Return CLS token representation for a batch of texts."""
         output = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        return mean_pool(output.last_hidden_state, attention_mask)  # (B, H)
+        return output.last_hidden_state[:, 0, :]  # (B, H)
 
     def forward(
         self,
-        root_input_ids:        torch.Tensor,
-        root_attention_mask:   torch.Tensor,
-        parent_input_ids:      torch.Tensor,
-        parent_attention_mask: torch.Tensor,
-        tweet_input_ids:       torch.Tensor,
-        tweet_attention_mask:  torch.Tensor,
-        labels:                Optional[torch.Tensor] = None,
-        soft_labels:           Optional[torch.Tensor] = None,
+        root_input_ids:           torch.Tensor,
+        root_attention_mask:      torch.Tensor,
+        parent_input_ids:         torch.Tensor,
+        parent_attention_mask:    torch.Tensor,
+        tweet_input_ids:          torch.Tensor,
+        tweet_attention_mask:     torch.Tensor,
+        labels:                   Optional[torch.Tensor] = None,
+        soft_labels:              Optional[torch.Tensor] = None,
         return_attention_weights: bool = False,
-    ) -> dict:
+    ) -> SequenceClassifierOutput:
         root_repr   = self.encode(root_input_ids,   root_attention_mask)    # (B, H)
         parent_repr = self.encode(parent_input_ids, parent_attention_mask)  # (B, H)
         tweet_repr  = self.encode(tweet_input_ids,  tweet_attention_mask)   # (B, H)
@@ -112,7 +113,6 @@ class HierarchicalContextModel(nn.Module):
         key_padding_mask = torch.stack([root_empty, parent_empty, tweet_empty], dim=1)  # (B, 3)
 
         # Tweet queries the full thread (root + parent + itself)
-        # Information flow: tweet → attends to → context
         attn_out, attn_weights = self.thread_attention(
             query=thread[:, 2:, :],
             key=thread, value=thread,
@@ -133,10 +133,10 @@ class HierarchicalContextModel(nn.Module):
             else:
                 loss = nn.CrossEntropyLoss()(logits, labels)
 
-        out = {"loss": loss, "logits": logits}
+        output = SequenceClassifierOutput(loss=loss, logits=logits)
         if return_attention_weights:
-            out["attention_weights"] = attn_weights.squeeze(1)  # (B, 3)
-        return out
+            output["attention_weights"] = attn_weights.squeeze(1)  # (B, 3)
+        return output
 
 
 class CrossAttentionContextModel(nn.Module):
@@ -155,7 +155,7 @@ class CrossAttentionContextModel(nn.Module):
         hidden_dim:       int   = 384,
         num_heads:        int   = 8,
         num_cross_layers: int   = 2,
-        dropout:          float = 0.1,
+        dropout:          float = 0.2,
         use_soft_labels:  bool  = False,
     ) -> None:
         super().__init__()
@@ -208,18 +208,7 @@ class CrossAttentionContextModel(nn.Module):
         soft_labels:              Optional[torch.Tensor] = None,
         class_weights:            Optional[torch.Tensor] = None,
         return_attention_weights: bool = False,
-    ) -> dict:
-        """
-        Args:
-            context_input_ids:        (B, ctx_len)  root + parent concatenated
-            context_attention_mask:   (B, ctx_len)
-            tweet_input_ids:          (B, tweet_len)
-            tweet_attention_mask:     (B, tweet_len)
-            labels:                   (B,) hard labels, optional
-            soft_labels:              (B, num_labels) soft labels, optional
-            class_weights:            (num_labels,) for class imbalance, optional
-            return_attention_weights: return last-layer attention weights
-        """
+    ) -> SequenceClassifierOutput:
         context_tokens = self.encode(context_input_ids, context_attention_mask)  # (B, ctx_len, H)
         tweet_tokens   = self.encode(tweet_input_ids,   tweet_attention_mask)    # (B, tweet_len, H)
 
@@ -229,7 +218,6 @@ class CrossAttentionContextModel(nn.Module):
         enriched = tweet_tokens
 
         for layer in self.cross_layers:
-            # Tweet tokens attend to context tokens
             attended, attn_weights = layer["cross_attn"](
                 query=enriched,
                 key=context_tokens,
@@ -238,13 +226,13 @@ class CrossAttentionContextModel(nn.Module):
                 need_weights=return_attention_weights,
                 average_attn_weights=False,
             )
-            enriched = layer["norm1"](enriched + attended)              # residual + norm
-            enriched = layer["norm2"](enriched + layer["ffn"](enriched))  # FFN + norm
+            enriched = layer["norm1"](enriched + attended)
+            enriched = layer["norm2"](enriched + layer["ffn"](enriched))
             last_attn_weights = attn_weights
 
-        # Mean pool over non-padding tweet tokens
-        pooled = mean_pool(enriched, tweet_attention_mask)  # (B, H)
-        logits = self.classifier(pooled)                    # (B, num_labels)
+        # CLS token for classification
+        pooled = enriched[:, 0, :]  # (B, H)
+        logits = self.classifier(pooled)
 
         loss = None
         if labels is not None:
@@ -254,10 +242,10 @@ class CrossAttentionContextModel(nn.Module):
             else:
                 loss = nn.CrossEntropyLoss(weight=class_weights)(logits, labels)
 
-        out: dict = {"logits": logits, "loss": loss}
+        output = SequenceClassifierOutput(loss=loss, logits=logits)
         if return_attention_weights:
-            out["attention_weights"] = last_attn_weights  # (B, heads, tweet_len, ctx_len)
-        return out
+            output["attention_weights"] = last_attn_weights  # (B, heads, tweet_len, ctx_len)
+        return output
 
     @torch.no_grad()
     def predict_proba(
@@ -272,5 +260,4 @@ class CrossAttentionContextModel(nn.Module):
             context_input_ids, context_attention_mask,
             tweet_input_ids,   tweet_attention_mask,
         )
-        return torch.softmax(out["logits"], dim=-1)
-    
+        return torch.softmax(out.logits, dim=-1)

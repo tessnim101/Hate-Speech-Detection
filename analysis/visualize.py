@@ -2,7 +2,7 @@
 Visualize and compare baseline and context aware models 
 
 Usage:
-    python3 visualize.py --results_path results/
+    python visualize.py --results_path results/
 """
 
 import argparse
@@ -17,13 +17,13 @@ MODEL_ORDER  = ["baseline", "hierarchical", "augmented", "cross_attention"]
 MODEL_LABELS = {
     "baseline":        "Baseline",
     "hierarchical":    "Hierarchical",
-    "augmented":       "BT-Augmented",
+    #"augmented":       "BT-Augmented",
     "cross_attention": "Cross-Attention",
 }
 COLORS = {
     "baseline":        "#4C72B0",
     "hierarchical":    "#DD8452",
-    "augmented":       "#55A868",
+    #"augmented":       "#55A868",
     "cross_attention": "#8B5CF6",
 }
 
@@ -162,6 +162,7 @@ def main():
 
     plot_test_bars(test_df,  available, axes[0, 0])
     plot_class_f1(test_df,  available, axes[0, 1])
+    #plot_val_curve(train_df, available, axes[1, 0], "eval_f1_class1", "Validation F1 Class 1 (stereotype) per Epoch")
     plot_val_curve(train_df, available, axes[1, 0], "eval_f1_macro",  "Validation F1 Macro per Epoch")
     plot_val_curve(train_df, available, axes[1, 1], "eval_f1_class1", "Validation F1 Class 1 (hate) per Epoch")
 

@@ -142,7 +142,7 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
     )
 
     model = HierarchicalContextModel(CONFIG["model_name"])
-    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
+    freeze_encoder_bottom_layers(model.encoder, n_layers=4)
 
     run_config = {
         **CONFIG,
@@ -198,7 +198,7 @@ def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None
     )
 
     model = HierarchicalContextModel(CONFIG["model_name"])
-    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
+    freeze_encoder_bottom_layers(model.encoder, n_layers=4)
 
     run_config = {
         **CONFIG,
@@ -248,7 +248,7 @@ def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weight
     )
 
     model = CrossAttentionContextModel(CONFIG["model_name"])
-    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
+    freeze_encoder_bottom_layers(model.encoder, n_layers=4)
 
     run_config = {
         **CONFIG,

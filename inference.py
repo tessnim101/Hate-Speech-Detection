@@ -99,7 +99,7 @@ def predict_hierarchical(model, tokenizer, df, batch_size, device):
             root_attention_mask=   r_enc["attention_mask"],
         )
 
-        logits = out["logits"]
+        logits = out.logits
         probs  = torch.softmax(logits, dim=-1)
         all_preds.extend(logits.argmax(dim=-1).cpu().tolist())
         all_probs.extend(probs.cpu().tolist())
@@ -141,7 +141,7 @@ def predict_cross_attention(model, tokenizer, df, batch_size, device):
             tweet_attention_mask=   twt_enc["attention_mask"],
         )
 
-        logits = out["logits"]
+        logits = out.logits
         probs  = torch.softmax(logits, dim=-1)
         all_preds.extend(logits.argmax(dim=-1).cpu().tolist())
         all_probs.extend(probs.cpu().tolist())

@@ -54,7 +54,7 @@ def run_hierarchical(model, tokenizer, df, batch_size, device):
             return_attention_weights=True,
         )
 
-        probs = torch.softmax(out["logits"], dim=-1)
+        probs = torch.softmax(out.logits, dim=-1)
         all_probs.append(probs.cpu().numpy())
         all_weights.append(out["attention_weights"].cpu().numpy())
 
@@ -90,7 +90,7 @@ def run_cross_attention(model, tokenizer, df, batch_size, device):
         )
 
         attn  = out["attention_weights"].cpu().numpy().mean(axis=1).mean(axis=1)
-        probs = torch.softmax(out["logits"], dim=-1).cpu().numpy()
+        probs = torch.softmax(out.logits, dim=-1).cpu().numpy()
 
         all_probs.append(probs)
         all_weights.extend(list(attn))

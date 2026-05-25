@@ -84,7 +84,7 @@ def extract_attention(model, tokenizer, df, batch_size, device):
 
         # (B, num_heads, tweet_len, ctx_len) → avg heads + tweet tokens → (B, ctx_len)
         avg   = out["attention_weights"].cpu().numpy().mean(axis=1).mean(axis=1)
-        preds = out["logits"].argmax(dim=-1).cpu().tolist()
+        preds = out.logits.argmax(dim=-1).cpu().tolist()
 
         all_weights.extend(list(avg))
         all_ctx_ids.extend(ctx_enc["input_ids"].cpu().tolist())

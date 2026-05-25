@@ -14,7 +14,7 @@ CONFIG = {
     "warmup_ratio":  0.1,   
     "max_grad_norm": 1.0,     
     "epochs":        9,
-    "early_stopping_patience": 5,
+    "early_stopping_patience": 3,
     "output_dir":    "./results",
     "log_dir":       "./logs",
     "imbalance_strategy": "weighted_loss",  # "weighted_loss", "oversample", "focal_loss"

@@ -72,7 +72,7 @@ def run_hierarchical_attention(model, tokenizer, df, batch_size, device):
             return_attention_weights=True,
         )
 
-        probs = torch.softmax(out["logits"], dim=-1)
+        probs = torch.softmax(out.logits, dim=-1)
         all_probs.append(probs.cpu().numpy())
         all_weights.append(out["attention_weights"].cpu().numpy())
 
