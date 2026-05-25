@@ -2,5 +2,7 @@ results/
 results_poster/
 results_baseline/
 results_freeze6/
-data/spanish_subset_collapsed/
+data/spanish_subset_collapsed/*
+!data/spanish_subset_collapsed/train_bt.csv
+!data/spanish_subset_collapsed/test_bt.csv
 data/spanish_subset/
