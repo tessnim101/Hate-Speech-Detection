@@ -17,7 +17,6 @@ import numpy as np
 import torch
 
 import pandas as pd
-from data.loader import load_data
 from data.preprocessing import filter_contextual_tweets, split_train_validation, clean_df, ids_to_text
 from utils.imbalance import compute_class_weights, oversample_minority_classes
 from training.runners import run_baseline, run_hierarchical, run_augmented, run_cross_attention
@@ -58,7 +57,14 @@ if __name__ == "__main__":
     os.makedirs(RES_DIR, exist_ok=True)
     os.makedirs(Path(RES_DIR) / "checkpoints", exist_ok=True)
 
-    df_train, df_test = load_data(DATADIR)
+    data_path = Path(DATADIR)
+    df_train  = pd.read_csv(data_path / "train.csv")
+    df_test   = pd.read_csv(data_path / "test.csv")
+    for df in [df_train, df_test]:
+        if "backtranslated_text" not in df.columns:
+            df["backtranslated_text"] = ""
+    df_train["backtranslated_text"] = df_train["backtranslated_text"].fillna("")
+    df_test["backtranslated_text"]  = df_test["backtranslated_text"].fillna("")
 
     # Clean text (lowercase, remove URLs/mentions/punctuation)
     df_train = clean_df(df_train)
@@ -105,13 +111,13 @@ if __name__ == "__main__":
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
     )
-    print("RUNNING CROSS-ATTENTION")
-    run_cross_attention(
+    print("RUNNING AUGMENTED")
+    run_augmented(
         df_train_split, df_val_split, df_test,
         run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
     )
-    # print("RUNNING AUGMENTED")
-    # run_augmented(
+    # print("RUNNING CROSS-ATTENTION")
+    # run_cross_attention(
     #     df_train_split, df_val_split, df_test,
     #     run_id=RUN_ID, res_dir=RES_DIR, class_weights=class_weights,
     # )
