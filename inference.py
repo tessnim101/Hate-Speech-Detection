@@ -178,9 +178,10 @@ def main():
     device = get_device()
     print(f"[device] {device}")
 
-    _, df_test = load_data(args.dataset_path)
-    df_test    = filter_contextual_tweets(df_test)
-    df_test    = ids_to_text(df_test.copy())
+    df_train, df_test = load_data(args.dataset_path)
+    combined  = pd.concat([df_train, df_test], ignore_index=True)
+    df_test   = ids_to_text(df_test, lookup_df=combined)
+    df_test   = filter_contextual_tweets(df_test)
     labels     = df_test["stereotype"].values
 
     # baseline

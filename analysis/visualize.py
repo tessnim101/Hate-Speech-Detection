@@ -17,13 +17,13 @@ MODEL_ORDER  = ["baseline", "hierarchical", "augmented", "cross_attention"]
 MODEL_LABELS = {
     "baseline":        "Baseline",
     "hierarchical":    "Hierarchical",
-    #"augmented":       "BT-Augmented",
+    "augmented":       "BT-Augmented",
     "cross_attention": "Cross-Attention",
 }
 COLORS = {
     "baseline":        "#4C72B0",
     "hierarchical":    "#DD8452",
-    #"augmented":       "#55A868",
+    "augmented":       "#55A868",
     "cross_attention": "#8B5CF6",
 }
 

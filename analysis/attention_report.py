@@ -17,7 +17,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--dataset_path",         required=True)
     p.add_argument("--context_path",         required=True)
-    p.add_argument("--bt_path",              required=True)
+    p.add_argument("--bt_path",              default=None)
     p.add_argument("--cross_attention_path", required=True)
     p.add_argument("--results_path",         default="figures/")
     p.add_argument("--batch_size",           type=int, default=32)
@@ -134,11 +134,13 @@ def _format_example(
     w(f"  Parent:  {str(row.get('parent_text', ''))[:80]}")
     w(f"  Label:   {'Stereotype' if lbl == 1 else 'Not Stereotype'}")
 
-    for tag, probs, extra in [
+    models_to_show = [
         ("[Cross-Attention]", ca_probs, None),
         ("[Hierarchical]",    hier_probs, hier_weights),
-        ("[BT-Augmented]",    bt_probs,   bt_weights),
-    ]:
+    ]
+    if bt_probs is not None:
+        models_to_show.append(("[BT-Augmented]", bt_probs, bt_weights))
+    for tag, probs, extra in models_to_show:
         pred    = probs[idx].argmax()
         correct = "✓ correct" if pred == lbl else "✗ wrong"
         w(f"  {tag:<20} Prediction: {'Stereotype' if pred == 1 else 'Not Stereotype'} "
@@ -180,7 +182,10 @@ def write_report(
             w(f"  {rank:>2}. {token:<25} : {score:.4f}")
 
     # Hierarchical position weights
-    for model_name, weights in [("HIERARCHICAL", hier_weights), ("BT-AUGMENTED", bt_weights)]:
+    position_models = [("HIERARCHICAL", hier_weights)]
+    if bt_weights is not None:
+        position_models.append(("BT-AUGMENTED", bt_weights))
+    for model_name, weights in position_models:
         w(); w("=" * 70)
         w(f"{model_name} — MEAN THREAD POSITION ATTENTION WEIGHTS")
         w("=" * 70)

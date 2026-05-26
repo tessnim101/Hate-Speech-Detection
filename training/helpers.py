@@ -12,7 +12,7 @@ from datasets import Dataset
 from safetensors.torch import save_file
 from transformers import AutoTokenizer, TrainerCallback
 
-from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical , tokenize_cross_attention
+from data.preprocessing import tokenize_baseline, tokenize_hierarchical, tokenize_cross_attention
 from config import CONFIG
 
 
@@ -157,7 +157,7 @@ def save_hierarchical_model(trainer, tokenizer, save_dir):
     save_dir.mkdir(parents=True, exist_ok=True)
     save_file(trainer.model.state_dict(), save_dir / "model.safetensors")
     tokenizer.save_pretrained(save_dir)
-    hconfig = {"model_name": CONFIG["model_name"], "num_labels": 2, "dropout": 0.05}
+    hconfig = {"model_name": CONFIG["model_name"], "num_labels": 2, "dropout": CONFIG["dropout"]}
     with open(save_dir / "hierarchical_config.json", "w") as f:
         json.dump(hconfig, f, indent=2)
 
@@ -182,13 +182,11 @@ def evaluate_on_test(trainer, df_test, tokenizer, model_type):
         test_ds = format_dataset(test_ds, "baseline")
 
     elif model_type in ("hierarchical", "augmented"):
-        df_test = ids_to_text(df_test.copy())
         test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
         test_ds = tokenize_hierarchical(test_ds, tokenizer, CONFIG["max_len"])
         test_ds = format_dataset(test_ds, model_type)
 
     elif model_type == "cross_attention":
-        df_test = ids_to_text(df_test.copy())
         test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
         test_ds = tokenize_cross_attention(test_ds, tokenizer, CONFIG["max_len_tweet"], CONFIG["max_len_context"])
         test_ds = format_dataset(test_ds, "cross_attention")

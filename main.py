@@ -16,8 +16,9 @@ import numpy as np
 
 import torch
 
+import pandas as pd
 from data.loader import load_data
-from data.preprocessing import filter_contextual_tweets, split_train_validation, clean_df
+from data.preprocessing import filter_contextual_tweets, split_train_validation, clean_df, ids_to_text
 from utils.imbalance import compute_class_weights, oversample_minority_classes
 from training.runners import run_baseline, run_hierarchical, run_augmented, run_cross_attention
 
@@ -62,6 +63,14 @@ if __name__ == "__main__":
     # Clean text (lowercase, remove URLs/mentions/punctuation)
     df_train = clean_df(df_train)
     df_test  = clean_df(df_test)
+
+    # Resolve parent/root IDs to text BEFORE filtering, using the full combined
+    # dataset as the lookup so that parent/root tweets filtered out later are
+    # still found (they are top-level tweets with level2==0 that would otherwise
+    # be dropped, leaving ~98% of rows with empty context).
+    combined = pd.concat([df_train, df_test], ignore_index=True)
+    df_train = ids_to_text(df_train, lookup_df=combined)
+    df_test  = ids_to_text(df_test,  lookup_df=combined)
 
     # Keep only tweets that have both parent and root tweets
     df_train = filter_contextual_tweets(df_train)

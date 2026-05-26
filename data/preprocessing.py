@@ -91,9 +91,18 @@ def split_train_validation(df, val_size=0.2):
 
 
 # Context resolution
-def ids_to_text(df):
-    """Replace parent and root tweet ids with their actual text."""
-    id_to_text = df[["comment_id", "text"]].rename(
+def ids_to_text(df, lookup_df=None):
+    """
+    Replace parent and root tweet ids with their actual text.
+
+    Args:
+        df:        DataFrame to add parent_text / root_text columns to.
+        lookup_df: DataFrame to build the id→text lookup from. Defaults to df
+                   itself, but should be the full unfiltered dataset so that
+                   parent/root tweets removed by filtering are still found.
+    """
+    source = lookup_df if lookup_df is not None else df
+    id_to_text = source[["comment_id", "text"]].rename(
         columns={"comment_id": "lookup_id", "text": "lookup_text"}
     )
 

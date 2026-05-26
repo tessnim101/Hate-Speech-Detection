@@ -25,7 +25,6 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from config import CONFIG
-from data.loader import load_data
 from data.preprocessing import filter_contextual_tweets, ids_to_text
 from utils.inference_utils import enc, load_hierarchical, load_cross_attention
 
@@ -34,8 +33,8 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--dataset_path",         required=True)
     p.add_argument("--context_path",         required=True)
-    p.add_argument("--bt_path",              required=True)
-    p.add_argument("--cross_attention_path", required=True)
+    p.add_argument("--bt_path",              default=None)
+    p.add_argument("--cross_attention_path", default=None)
     p.add_argument("--results_path",         default="figures/")
     p.add_argument("--batch_size",           type=int, default=32)
     return p.parse_args()
@@ -216,22 +215,13 @@ def plot_attention_distribution(weights, model_name, out_dir, positions, colors)
 
 
 def plot_all_models_comparison(hier_weights, bt_weights, ca_weights, labels, out_dir):
-    """
-    3x2 grid:
-      rows = Hierarchical / BT-Augmented / Cross-Attention
-      cols = Not stereotype / Stereotype
-
-    Hierarchical and BT: 3 bars (root/parent/tweet)
-    Cross-Attention:      2 bars (root/parent segments)
-    """
     classes = [(0, "Not stereotype (class 0)"), (1, "Stereotype (class 1)")]
-    rows    = [
-        ("Hierarchical",    hier_weights, POSITIONS_H,  COLORS_H),
-        ("BT-Augmented",    bt_weights,   POSITIONS_H,  COLORS_H),
-        ("Cross-Attention", ca_weights,   POSITIONS_CA, COLORS_CA),
-    ]
+    rows    = [("Hierarchical", hier_weights, POSITIONS_H, COLORS_H)]
+    if bt_weights is not None:
+        rows.append(("BT-Augmented", bt_weights, POSITIONS_H, COLORS_H))
+    rows.append(("Cross-Attention", ca_weights, POSITIONS_CA, COLORS_CA))
 
-    fig, axes = plt.subplots(3, 2, figsize=(14, 13))
+    fig, axes = plt.subplots(len(rows), 2, figsize=(14, 5 * len(rows)))
     fig.suptitle(
         "Context Attention Weights by Class — All Models",
         fontsize=14, fontweight="bold",
@@ -262,9 +252,12 @@ def main():
     out_dir = Path(args.results_path)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    _, df_test = load_data(args.dataset_path)
+    df_test  = pd.read_csv(Path(args.dataset_path) / "test.csv")
+    df_train = pd.read_csv(Path(args.dataset_path) / "train.csv")
+    lookup   = pd.concat([df_train, df_test], ignore_index=True)
+    df_test["backtranslated_text"] = df_test.get("backtranslated_text", "").fillna("")
     df_test    = filter_contextual_tweets(df_test)
-    df_test    = ids_to_text(df_test.copy())
+    df_test    = ids_to_text(df_test.copy(), lookup_df=lookup)
     labels     = df_test["stereotype"].values
     print(f"[data] Test set: {len(df_test)} samples")
 
@@ -282,43 +275,47 @@ def main():
     plot_aggregate_attention(hier_weights, labels, "Hierarchical", out_dir, POSITIONS_H, COLORS_H)
     plot_attention_distribution(hier_weights, "Hierarchical", out_dir, POSITIONS_H, COLORS_H)
 
-    # BT augmented 
-    print("\n[loading] BT-Augmented...")
-    bt_model, bt_tokenizer = load_hierarchical(args.bt_path, device)
-    print("[inference] Extracting BT-augmented attention weights...")
-    bt_probs, bt_weights = run_hierarchical_attention(
-        bt_model, bt_tokenizer, df_test, args.batch_size, device
-    )
-    print("\n===== BT-Augmented Attention Weights =====")
-    for i, pos in enumerate(POSITIONS_H):
-        print(f"  {pos:<15}  mean={bt_weights[:, i].mean():.3f}  std={bt_weights[:, i].std():.3f}")
-
-    plot_aggregate_attention(bt_weights, labels, "BT-Augmented", out_dir, POSITIONS_H, COLORS_H)
-    plot_attention_distribution(bt_weights, "BT-Augmented", out_dir, POSITIONS_H, COLORS_H)
+    # BT augmented
+    bt_weights = None
+    if args.bt_path:
+        print("\n[loading] BT-Augmented...")
+        bt_model, bt_tokenizer = load_hierarchical(args.bt_path, device)
+        print("[inference] Extracting BT-augmented attention weights...")
+        _, bt_weights = run_hierarchical_attention(
+            bt_model, bt_tokenizer, df_test, args.batch_size, device
+        )
+        print("\n===== BT-Augmented Attention Weights =====")
+        for i, pos in enumerate(POSITIONS_H):
+            print(f"  {pos:<15}  mean={bt_weights[:, i].mean():.3f}  std={bt_weights[:, i].std():.3f}")
+        plot_aggregate_attention(bt_weights, labels, "BT-Augmented", out_dir, POSITIONS_H, COLORS_H)
+        plot_attention_distribution(bt_weights, "BT-Augmented", out_dir, POSITIONS_H, COLORS_H)
 
     # cross attention
-    print("\n[loading] Cross-Attention...")
-    ca_model, ca_tokenizer = load_cross_attention(args.cross_attention_path, device)
-    print("[inference] Extracting cross-attention weights...")
-    ca_token_weights, ca_ctx_ids = run_cross_attention_weights(
-        ca_model, ca_tokenizer, df_test, args.batch_size, device
-    )
-    print("[analysis] Computing segment importance...")
-    ca_seg_weights = compute_ca_segment_importance(
-        ca_token_weights, ca_ctx_ids, df_test, ca_tokenizer
-    )
-    print("\n===== Cross-Attention Segment Importance =====")
-    for i, seg in enumerate(POSITIONS_CA):
-        print(f"  {seg:<15}  mean={ca_seg_weights[:, i].mean():.3f}  std={ca_seg_weights[:, i].std():.3f}")
-    for lbl, name in [(0, "Not stereotype"), (1, "Stereotype")]:
-        mask = labels == lbl
-        print(f"  {name}:")
+    ca_seg_weights = None
+    if args.cross_attention_path:
+        print("\n[loading] Cross-Attention...")
+        ca_model, ca_tokenizer = load_cross_attention(args.cross_attention_path, device)
+        print("[inference] Extracting cross-attention weights...")
+        ca_token_weights, ca_ctx_ids = run_cross_attention_weights(
+            ca_model, ca_tokenizer, df_test, args.batch_size, device
+        )
+        print("[analysis] Computing segment importance...")
+        ca_seg_weights = compute_ca_segment_importance(
+            ca_token_weights, ca_ctx_ids, df_test, ca_tokenizer
+        )
+        print("\n===== Cross-Attention Segment Importance =====")
         for i, seg in enumerate(POSITIONS_CA):
-            print(f"    {seg:<15}  {ca_seg_weights[mask, i].mean():.3f}")
+            print(f"  {seg:<15}  mean={ca_seg_weights[:, i].mean():.3f}  std={ca_seg_weights[:, i].std():.3f}")
+        for lbl, name in [(0, "Not stereotype"), (1, "Stereotype")]:
+            mask = labels == lbl
+            print(f"  {name}:")
+            for i, seg in enumerate(POSITIONS_CA):
+                print(f"    {seg:<15}  {ca_seg_weights[mask, i].mean():.3f}")
+        plot_aggregate_attention(ca_seg_weights, labels, "Cross-Attention", out_dir, POSITIONS_CA, COLORS_CA)
+        plot_attention_distribution(ca_seg_weights, "Cross-Attention", out_dir, POSITIONS_CA, COLORS_CA)
 
-    plot_aggregate_attention(ca_seg_weights, labels, "Cross-Attention", out_dir, POSITIONS_CA, COLORS_CA)
-    plot_attention_distribution(ca_seg_weights, "Cross-Attention", out_dir, POSITIONS_CA, COLORS_CA)
-    plot_all_models_comparison(hier_weights, bt_weights, ca_seg_weights, labels, out_dir)
+    if ca_seg_weights is not None:
+        plot_all_models_comparison(hier_weights, bt_weights, ca_seg_weights, labels, out_dir)
 
     print(f"\nDone. All figures saved to {out_dir}")
 
