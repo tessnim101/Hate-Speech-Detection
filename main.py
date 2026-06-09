@@ -26,11 +26,6 @@ from config import CONFIG
 
 
 def set_seed(seed: int):
-    """
-    Fix all sources of randomness for reproducible training.
-    Note: cudnn.benchmark is disabled to avoid non-deterministic
-    algorithm selection — this trades a small speed cost for reproducibility.
-    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -58,7 +53,7 @@ if __name__ == "__main__":
 
     os.makedirs(RES_DIR, exist_ok=True)
 
-    # Data loading & preprocessing (done once, outside the seed loop) 
+    # Data loading & preprocessing 
     df_train, df_test = load_data(DATADIR)
 
     df_train = clean_df(df_train)
