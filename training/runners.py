@@ -8,9 +8,9 @@ and delegates to _run_training for the shared train → evaluate → save pipeli
 import shutil
 from pathlib import Path
 
-from transformers import AutoTokenizer, EarlyStoppingCallback
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, EarlyStoppingCallback
 
-from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical, augment_with_backtranslation, tokenize_cross_attention
+from data.preprocessing import tokenize_baseline, tokenize_hierarchical, augment_with_backtranslation, tokenize_cross_attention
 from modeling.models import load_model, HierarchicalContextModel, CrossAttentionContextModel
 from training.trainer_utils import build_trainer
 from training.trainer_utils import compute_metrics
@@ -90,7 +90,12 @@ def run_baseline(df_train, df_val, df_test, run_id, res_dir, class_weights=None)
     train_ds = format_dataset(tokenize_baseline(prepare_dataset(df_train, ["text"]), tokenizer, CONFIG["max_len"]), "baseline")
     val_ds   = format_dataset(tokenize_baseline(prepare_dataset(df_val,   ["text"]), tokenizer, CONFIG["max_len"]), "baseline")
 
-    model = load_model(CONFIG["model_name"])
+    model = AutoModelForSequenceClassification.from_pretrained(
+    CONFIG["model_name"],
+    num_labels=2,
+    hidden_dropout_prob=0.3,
+    attention_probs_dropout_prob=0.3,
+    )
     freeze_encoder_bottom_layers(model, n_layers=6)
 
     run_config = {
@@ -123,8 +128,8 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
     """
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
 
-    df_train_h = ids_to_text(df_train.copy())
-    df_val_h   = ids_to_text(df_val.copy())
+    df_train_h = df_train.copy()
+    df_val_h   = df_val.copy()
 
     train_ds = format_dataset(
         tokenize_hierarchical(
@@ -142,7 +147,7 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
     )
 
     model = HierarchicalContextModel(CONFIG["model_name"])
-    freeze_encoder_bottom_layers(model.encoder, n_layers=4)
+    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
 
     run_config = {
         **CONFIG,
@@ -179,8 +184,8 @@ def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None
 
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
 
-    df_train_aug = augment_with_backtranslation(ids_to_text(df_train.copy()))
-    df_val_h     = ids_to_text(df_val.copy())
+    df_train_aug = augment_with_backtranslation(df_train.copy())
+    df_val_h     = df_val.copy()
 
     train_ds = format_dataset(
         tokenize_hierarchical(
@@ -198,7 +203,7 @@ def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None
     )
 
     model = HierarchicalContextModel(CONFIG["model_name"])
-    freeze_encoder_bottom_layers(model.encoder, n_layers=4)
+    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
 
     run_config = {
         **CONFIG,
@@ -229,8 +234,8 @@ def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weight
     """
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
 
-    df_train_ca = ids_to_text(df_train.copy())
-    df_val_ca   = ids_to_text(df_val.copy())
+    df_train_ca = df_train.copy()
+    df_val_ca   = df_val.copy()
 
     train_ds = format_dataset(
         tokenize_cross_attention(
@@ -248,7 +253,7 @@ def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weight
     )
 
     model = CrossAttentionContextModel(CONFIG["model_name"])
-    freeze_encoder_bottom_layers(model.encoder, n_layers=4)
+    freeze_encoder_bottom_layers(model.encoder, n_layers=6)
 
     run_config = {
         **CONFIG,

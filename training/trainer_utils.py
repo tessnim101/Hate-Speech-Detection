@@ -144,6 +144,10 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
     Returns:
         A configured Trainer instance.
     """
+    train_size   = len(train_ds)
+    steps_per_epoch = max(1, train_size // (config.get("train_bs", 16) * 2))  # *2 for grad accumulation
+    total_steps     = steps_per_epoch * config.get("epochs", 10)
+    warmup_steps    = max(50, int(0.06 * total_steps))
     args = TrainingArguments(
         output_dir=config.get("output_dir", "checkpoints"),
         num_train_epochs=config.get("epochs", 7),
@@ -151,13 +155,13 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         per_device_train_batch_size=config.get("train_bs", 16),
         per_device_eval_batch_size=config.get("eval_bs", 16),
         #dataloader_num_workers=10,        # parallel data loading
-        dataloader_pin_memory=True,       # faster GPU transfer
+        dataloader_pin_memory=True,        # faster GPU transfer
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,
         weight_decay=config.get("weight_decay", 0.01),
         max_grad_norm=config.get("max_grad_norm", 1.0),
-        warmup_steps=500,
+        warmup_steps=warmup_steps,
         #warmup_ratio=config.get("warmup_ratio", 0.1),
         lr_scheduler_type="linear",
         gradient_accumulation_steps=2,
@@ -167,7 +171,7 @@ def build_trainer(model, train_ds, val_ds, tokenizer, config: dict) -> Trainer:
         logging_steps=50,
         fp16=config.get("fp16", False),
         report_to="none",
-        seed=42,
+        seed=config.get("seed", 42),
     )
 
     _is_custom          = isinstance(model, (HierarchicalContextModel, CrossAttentionContextModel))

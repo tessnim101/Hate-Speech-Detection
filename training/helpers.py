@@ -12,7 +12,7 @@ from datasets import Dataset
 from safetensors.torch import save_file
 from transformers import AutoTokenizer, TrainerCallback
 
-from data.preprocessing import ids_to_text, tokenize_baseline, tokenize_hierarchical , tokenize_cross_attention
+from data.preprocessing import tokenize_baseline, tokenize_hierarchical , tokenize_cross_attention
 from config import CONFIG
 
 
@@ -182,13 +182,13 @@ def evaluate_on_test(trainer, df_test, tokenizer, model_type):
         test_ds = format_dataset(test_ds, "baseline")
 
     elif model_type in ("hierarchical", "augmented"):
-        df_test = ids_to_text(df_test.copy())
+        df_test = df_test.copy()
         test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
         test_ds = tokenize_hierarchical(test_ds, tokenizer, CONFIG["max_len"])
         test_ds = format_dataset(test_ds, model_type)
 
     elif model_type == "cross_attention":
-        df_test = ids_to_text(df_test.copy())
+        df_test = df_test.copy()
         test_ds = prepare_dataset(df_test, ["text", "parent_text", "root_text"])
         test_ds = tokenize_cross_attention(test_ds, tokenizer, CONFIG["max_len_tweet"], CONFIG["max_len_context"])
         test_ds = format_dataset(test_ds, "cross_attention")
