@@ -1,0 +1,265 @@
+======================================================================
+HIERARCHICAL — MEAN THREAD POSITION ATTENTION WEIGHTS
+======================================================================
+  Not stereotype:
+    Root tweet           : 0.3256
+    Parent tweet         : 0.3089
+    Target tweet         : 0.3655
+  Stereotype:
+    Root tweet           : 0.3704
+    Parent tweet         : 0.3328
+    Target tweet         : 0.2968
+
+======================================================================
+BT-AUGMENTED — MEAN THREAD POSITION ATTENTION WEIGHTS
+======================================================================
+  Not stereotype:
+    Root tweet           : 0.4067
+    Parent tweet         : 0.2670
+    Target tweet         : 0.3263
+  Stereotype:
+    Root tweet           : 0.4157
+    Parent tweet         : 0.2941
+    Target tweet         : 0.2902
+
+======================================================================
+EXAMPLE DETAILS — NOT STEREOTYPE
+======================================================================
+
+--- Example 1 (idx 1008) ---
+  Tweet:   con o sin paracaídas
+  Root:    en 48 horas ha llegado el equivalente a un 11 de la población
+  Parent:  aviones y a desperdigarlos por la península como en ocasiones anteriores
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✓ correct) p=0.857
+  [Hierarchical]       Prediction: Not Stereotype (✓ correct) p=0.821
+  Thread weights: Root tweet=0.348, Parent tweet=0.262, Target tweet=0.390
+  [BT-Augmented]       Prediction: Not Stereotype (✓ correct) p=0.772
+  Thread weights: Root tweet=0.472, Parent tweet=0.257, Target tweet=0.271
+
+--- Example 2 (idx 389) ---
+  Tweet:   asesinato
+  Root:    🚩en relación a la muerte de samuel joven coruñés en la madrugada del sábado al d
+  Parent:  🚩en relación a la muerte de samuel joven coruñés en la madrugada del sábado al d
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✓ correct) p=0.801
+  [Hierarchical]       Prediction: Not Stereotype (✓ correct) p=0.813
+  Thread weights: Root tweet=0.369, Parent tweet=0.302, Target tweet=0.329
+  [BT-Augmented]       Prediction: Not Stereotype (✓ correct) p=0.763
+  Thread weights: Root tweet=0.351, Parent tweet=0.280, Target tweet=0.370
+
+--- Example 3 (idx 711) ---
+  Tweet:   no se os ocurre pensar que no se trata de que el gobierno está impasible está todo según el plan pero a corto plazo los ...
+  Root:    a ellos no les preocupa el reloj son como la gota de agua que no deja de caer es
+  Parent:  el gobierno está a en otras cosas mientras no lleguen a la moncloa y les muevan 
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✓ correct) p=0.826
+  [Hierarchical]       Prediction: Not Stereotype (✓ correct) p=0.811
+  Thread weights: Root tweet=0.347, Parent tweet=0.263, Target tweet=0.389
+  [BT-Augmented]       Prediction: Not Stereotype (✓ correct) p=0.723
+  Thread weights: Root tweet=0.408, Parent tweet=0.226, Target tweet=0.366
+
+--- Example 4 (idx 94) ---
+  Tweet:   los mismos zapatos y algunos con la misma camisa se los llevaron también de compras quién lo pagó 🤔🧐
+  Root:    laventanaindiscreta aeropuerto de gran canaria subsaharianos y marroquíes llegad
+  Parent:  laventanaindiscreta aeropuerto de gran canaria subsaharianos y marroquíes llegad
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✓ correct) p=0.805
+  [Hierarchical]       Prediction: Not Stereotype (✓ correct) p=0.829
+  Thread weights: Root tweet=0.283, Parent tweet=0.260, Target tweet=0.457
+  [BT-Augmented]       Prediction: Not Stereotype (✓ correct) p=0.780
+  Thread weights: Root tweet=0.390, Parent tweet=0.237, Target tweet=0.373
+
+--- Example 5 (idx 752) ---
+  Tweet:   pues en catalunya diem a feo muy feo
+  Root:    
+  Parent:  en sevilla moro es el que no es cristiano los niños no bautizados son moritos no
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✓ correct) p=0.859
+  [Hierarchical]       Prediction: Not Stereotype (✓ correct) p=0.805
+  Thread weights: Root tweet=0.000, Parent tweet=0.584, Target tweet=0.416
+  [BT-Augmented]       Prediction: Not Stereotype (✓ correct) p=0.819
+  Thread weights: Root tweet=0.000, Parent tweet=0.542, Target tweet=0.458
+
+--- Example 6 (idx 241) ---
+  Tweet:   patéticos los de podemos como siempre
+  Root:    a petición de la comunidad musulmana ⬇️
+  Parent:  a petición de la comunidad musulmana ⬇️
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✓ correct) p=0.846
+  [Hierarchical]       Prediction: Not Stereotype (✓ correct) p=0.869
+  Thread weights: Root tweet=0.318, Parent tweet=0.289, Target tweet=0.394
+  [BT-Augmented]       Prediction: Not Stereotype (✓ correct) p=0.818
+  Thread weights: Root tweet=0.413, Parent tweet=0.241, Target tweet=0.346
+
+--- Example 7 (idx 867) ---
+  Tweet:   es marroquí pero también es hombre no sé si una cosa compensa la otra y ahora hablando en serio siempre hay que reconoce...
+  Root:    está quedando una españa muy diversa
+  Parent:  lo del que un marroquí se llevase unas hostias por tratar de salvaguardar la int
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✓ correct) p=0.829
+  [Hierarchical]       Prediction: Not Stereotype (✓ correct) p=0.869
+  Thread weights: Root tweet=0.328, Parent tweet=0.312, Target tweet=0.360
+  [BT-Augmented]       Prediction: Not Stereotype (✓ correct) p=0.851
+  Thread weights: Root tweet=0.480, Parent tweet=0.190, Target tweet=0.330
+
+--- Example 8 (idx 952) ---
+  Tweet:   también puede ser que la familia no quiera saber nada de él porque tenga una enfermedad esquizofrénica y la familia no t...
+  Root:    pues una multa por vivir en la calle esa es la solución para algunos
+  Parent:  
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✓ correct) p=0.594
+  [Hierarchical]       Prediction: Stereotype (✗ wrong) p=0.537
+  Thread weights: Root tweet=0.674, Parent tweet=0.000, Target tweet=0.326
+  [BT-Augmented]       Prediction: Not Stereotype (✓ correct) p=0.516
+  Thread weights: Root tweet=0.719, Parent tweet=0.000, Target tweet=0.281
+
+--- Example 9 (idx 44) ---
+  Tweet:   se cobra 3760 euros en huelva y en sevilla 45 euros sin contar retenciones sólo por pasar la frontera entre huelva y sev...
+  Root:    pues entonces sabrás cuánto cobra un jornalero en la fresa verdad
+  Parent:  sé lo que pone el convenio pero no sé cuántas empresas lo cumplen si se paga a t
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✗ wrong) p=0.597
+  [Hierarchical]       Prediction: Stereotype (✗ wrong) p=0.773
+  Thread weights: Root tweet=0.394, Parent tweet=0.430, Target tweet=0.176
+  [BT-Augmented]       Prediction: Stereotype (✗ wrong) p=0.961
+  Thread weights: Root tweet=0.396, Parent tweet=0.386, Target tweet=0.218
+
+--- Example 10 (idx 98) ---
+  Tweet:   detenido en noviembre investigado por abuso sexual y explotación de menores con fines sexuales en febrero está en la cal...
+  Root:    socorro ese marroquí está parado sin hacerme nada y yo soy una racista de mierda
+  Parent:  socorro ese marroquí está parado sin hacerme nada y yo soy una racista de mierda
+  Label:   Not Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✗ wrong) p=0.982
+  [Hierarchical]       Prediction: Stereotype (✗ wrong) p=0.971
+  Thread weights: Root tweet=0.403, Parent tweet=0.407, Target tweet=0.189
+  [BT-Augmented]       Prediction: Stereotype (✗ wrong) p=0.982
+  Thread weights: Root tweet=0.444, Parent tweet=0.362, Target tweet=0.193
+======================================================================
+EXAMPLE DETAILS — STEREOTYPE
+======================================================================
+
+--- Example 1 (idx 125) ---
+  Tweet:   solo podía ser cosa de podemosque se las lleven ellos a sus piscinas privadaso playas cercanaso se adaptan a lo que ofre...
+  Root:    podemos creará en españa las nuevas playas para mujeres musulmanas
+  Parent:  podemos creará en españa las nuevas playas para mujeres musulmanas
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✓ correct) p=0.985
+  [Hierarchical]       Prediction: Stereotype (✓ correct) p=0.977
+  Thread weights: Root tweet=0.408, Parent tweet=0.395, Target tweet=0.197
+  [BT-Augmented]       Prediction: Stereotype (✓ correct) p=0.987
+  Thread weights: Root tweet=0.437, Parent tweet=0.357, Target tweet=0.206
+
+--- Example 2 (idx 602) ---
+  Tweet:   es alucinante casi 7000 inmigrantes en el listado con una paga alucinante que nadie tendremos en la jubilación a pesar d...
+  Root:    la gota de agua que no deja de caer es decir que cae de manera permanente y lleg
+  Parent:  la gota de agua que no deja de caer es decir que cae de manera permanente y lleg
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✓ correct) p=0.848
+  [Hierarchical]       Prediction: Stereotype (✓ correct) p=0.797
+  Thread weights: Root tweet=0.413, Parent tweet=0.405, Target tweet=0.182
+  [BT-Augmented]       Prediction: Stereotype (✓ correct) p=0.643
+  Thread weights: Root tweet=0.517, Parent tweet=0.322, Target tweet=0.161
+
+--- Example 3 (idx 1057) ---
+  Tweet:   para ellos subsistir aquí a base de ayudas o robo es la risa no me lo digas ¿inda y guasap
+  Root:    en 48 horas ha llegado el equivalente a un 11 de la población
+  Parent:  no aquí se les llama con una vida mejor fácil para ellos subsistir aquí a base d
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✓ correct) p=0.532
+  [Hierarchical]       Prediction: Not Stereotype (✗ wrong) p=0.525
+  Thread weights: Root tweet=0.437, Parent tweet=0.322, Target tweet=0.241
+  [BT-Augmented]       Prediction: Not Stereotype (✗ wrong) p=0.563
+  Thread weights: Root tweet=0.523, Parent tweet=0.272, Target tweet=0.204
+
+--- Example 4 (idx 977) ---
+  Tweet:   te iba a poner a ver lo que tardan en decirte que lo alojes tu el tu casa y efectivamente incluso antes de tu comentario...
+  Root:    si tuviera papeles desde el principio esto no pasaría todo por una ley de inmigr
+  Parent:  
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✗ wrong) p=0.855
+  [Hierarchical]       Prediction: Not Stereotype (✗ wrong) p=0.869
+  Thread weights: Root tweet=0.423, Parent tweet=0.000, Target tweet=0.577
+  [BT-Augmented]       Prediction: Not Stereotype (✗ wrong) p=0.810
+  Thread weights: Root tweet=0.564, Parent tweet=0.000, Target tweet=0.436
+
+--- Example 5 (idx 627) ---
+  Tweet:   al parecer el gobierno francés el tal macron está a punto de alcanzar el mismo acuerdo esto supondría que en breve plazo...
+  Root:    nos estamos jugando ser una nación o convertirnos en el basurero de europa graci
+  Parent:  nos estamos jugando ser una nación o convertirnos en el basurero de europa graci
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✓ correct) p=0.989
+  [Hierarchical]       Prediction: Stereotype (✓ correct) p=0.991
+  Thread weights: Root tweet=0.415, Parent tweet=0.398, Target tweet=0.187
+  [BT-Augmented]       Prediction: Stereotype (✓ correct) p=0.992
+  Thread weights: Root tweet=0.431, Parent tweet=0.366, Target tweet=0.204
+
+--- Example 6 (idx 1022) ---
+  Tweet:   y por muy mal que estemos comparar nuestra situación con la de la inmensa mayoría de la población africana es de una dem...
+  Root:    porque en europa ya somos todos felices y comemos perdices el dumping salarial e
+  Parent:  porque en europa ya somos todos felices y comemos perdices el dumping salarial e
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✗ wrong) p=0.511
+  [Hierarchical]       Prediction: Not Stereotype (✗ wrong) p=0.662
+  Thread weights: Root tweet=0.388, Parent tweet=0.348, Target tweet=0.264
+  [BT-Augmented]       Prediction: Stereotype (✓ correct) p=0.689
+  Thread weights: Root tweet=0.430, Parent tweet=0.324, Target tweet=0.246
+
+--- Example 7 (idx 623) ---
+  Tweet:   de todos los inmigrantes ilegales de alemania y al parecer el gobierno francés está a punto de alcanzar el mismo acuerdo...
+  Root:    recibido de un amigo con el ruego de su difusión este mensaje es muy importante 
+  Parent:  recibido de un amigo con el ruego de su difusión este mensaje es muy importante 
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✓ correct) p=0.987
+  [Hierarchical]       Prediction: Stereotype (✓ correct) p=0.988
+  Thread weights: Root tweet=0.412, Parent tweet=0.408, Target tweet=0.180
+  [BT-Augmented]       Prediction: Stereotype (✓ correct) p=0.992
+  Thread weights: Root tweet=0.391, Parent tweet=0.359, Target tweet=0.250
+
+--- Example 8 (idx 613) ---
+  Tweet:   soy canario votante de vox y la situación no es esa es cierto que hay que parar la inmigración ilegal ya porque si no de...
+  Root:    julio ariza 13 de mar de 2022 están llamando por la radio y la tv la gente de ca
+  Parent:  julio ariza 13 de mar de 2022 están llamando por la radio y la tv la gente de ca
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✓ correct) p=0.818
+  [Hierarchical]       Prediction: Stereotype (✓ correct) p=0.932
+  Thread weights: Root tweet=0.427, Parent tweet=0.393, Target tweet=0.180
+  [BT-Augmented]       Prediction: Stereotype (✓ correct) p=0.890
+  Thread weights: Root tweet=0.427, Parent tweet=0.343, Target tweet=0.231
+
+--- Example 9 (idx 1040) ---
+  Tweet:   no hace falta bombardear no hay que ser bestia pero si lo que llegan no son expulsados y al final consiguen quedarse leg...
+  Root:    en 48 horas ha llegado el equivalente a un 11 de la población
+  Parent:  
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✓ correct) p=0.920
+  [Hierarchical]       Prediction: Stereotype (✓ correct) p=0.974
+  Thread weights: Root tweet=0.720, Parent tweet=0.000, Target tweet=0.280
+  [BT-Augmented]       Prediction: Stereotype (✓ correct) p=0.978
+  Thread weights: Root tweet=0.660, Parent tweet=0.000, Target tweet=0.340
+
+--- Example 10 (idx 490) ---
+  Tweet:   mira si controlaseis un poco a los menas y no justificaseis todo lo que hacen esto se podría haber evitado
+  Root:    urgente un mena pega una paliza a un gay en pontevedra al grito de homosexuales 
+  Parent:  urgente un mena pega una paliza a un gay en pontevedra al grito de homosexuales 
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Stereotype (✓ correct) p=0.567
+  [Hierarchical]       Prediction: Not Stereotype (✗ wrong) p=0.650
+  Thread weights: Root tweet=0.369, Parent tweet=0.329, Target tweet=0.302
+  [BT-Augmented]       Prediction: Stereotype (✓ correct) p=0.741
+  Thread weights: Root tweet=0.524, Parent tweet=0.293, Target tweet=0.183
+
+======================================================================
+EXPLICITLY REQUESTED TWEET INDICES
+======================================================================
+
+--- Requested Example 1 (idx 599) ---
+  Tweet:   y nosotros pagando 50 euros de impuestos cada vez echamos gasolina
+  Root:    una vez controlen las islas vendrán aquí a reclamar más territorios poco a poco 
+  Parent:  es alucinante casi 7000 inmigrantes en el listado con una paga alucinante que na
+  Label:   Stereotype
+  [Cross-Attention]    Prediction: Not Stereotype (✗ wrong) p=0.544
+  [Hierarchical]       Prediction: Not Stereotype (✗ wrong) p=0.581
+  Thread weights: Root tweet=0.398, Parent tweet=0.287, Target tweet=0.315
+  [BT-Augmented]       Prediction: Not Stereotype (✗ wrong) p=0.691
+  Thread weights: Root tweet=0.505, Parent tweet=0.227, Target tweet=0.268
