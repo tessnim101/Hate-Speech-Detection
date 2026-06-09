@@ -181,12 +181,7 @@ All scripts in `analysis/` are standalone. Each file has its full run command at
 
 `interpretability_extended.py`: Attention distributions
 
-Runs inference on the full test set and extracts attention weights from the hierarchical and cross-attention models. Produces:
-
-- **Bar charts** of mean attention weights per thread position (root / parent / target tweet) split by class, for the hierarchical model
-- **Violin plots** of attention weight distributions across all test samples for both models
-- **Cross-attention segment importance** — for each sample, computes the fraction of attention allocated to the root vs parent portion of the context, using layer 1 weights. 
-- **Layer 1 vs Layer 2 comparison** — attention shift between the two cross-attention layers
+Runs inference on the full test set and extracts attention weights from the hierarchical and cross-attention models. Produces bar charts of mean attention weights per thread position split by class, violin plots of attention weight distributions, cross-attention segment importance (fraction of attention on root vs parent, using layer 1 weights) and a layer 1 vs layer 2 comparison.
 
 `attention_report.py`: Per-example attention report
 
