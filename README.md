@@ -1,6 +1,6 @@
  # Context-Aware Hate Speech Detection Using Conversational Threads
 
-Binary stereotype classification on Spanish social media posts using conversational thread context. We compare a context-free baseline against three context-aware architectures built on top of XLM-RoBERTa and study how much the surrounding thread (parent and root posts) helps detect stereotypes.
+Binary stereotype classification on Spanish tweets/comments using conversational thread context. We compare a context-free baseline against three context-aware architectures built on top of XLM-RoBERTa and study how much the surrounding thread (parent and root tweets/comments) helps detect stereotypes.
 
 ---
 
@@ -23,7 +23,7 @@ python main.py \
 
 ## Task
 
-Given a Spanish post and its conversational thread (parent post + root post), predict whether the post contains a stereotype (label 1) or not (label 0).
+Given a Spanish tweet/comment and its conversational thread (parent tweet/comment + root tweet/comment), predict whether the text contains a stereotype (label 1) or not (label 0).
 
 Each sample includes:
 - `text` — the target tweet/comment
@@ -42,7 +42,6 @@ The dataset combines two sources identifiable via the `source` column:
 - **StereoHoax** — Twitter/X conversational threads reacting to racial hoaxes
 - **DETESTS** — Spanish newspaper comments
 
-Expected files:
 ```
 data/spanish_subset_collapsed/
 ├── train.csv
@@ -58,20 +57,20 @@ All text fields (`text`, `parent_text`, `root_text`) are cleaned before training
 - Punctuation removed
 - Whitespace collapsed
 
-Thread context is resolved by mapping parent and root post IDs to their actual text using the full dataset as a lookup. Samples where parent or root text could not be resolved are dropped. Only samples with both parent and root context are kept for training and evaluation, ensuring all models are compared on the same population.
+Thread context is resolved by mapping parent and root tweet IDs to their actual text using the full dataset as a lookup. Samples where parent or root text could not be resolved are dropped. Only samples with both parent and root context are kept for training and evaluation, ensuring all models are compared on the same population.
 
 ---
 
 ## Models
 
 ### Baseline
-Standard XLM-RoBERTa fine-tuned on post text only, with no thread context. Serves as the reference point.
+Standard XLM-RoBERTa fine-tuned on tweet text only, with no thread context. Serves as the reference point.
 
 ### Hierarchical
-Encodes post, parent, and root separately with a **shared** XLM-RoBERTa encoder. The three CLS representations are combined via multi-head self-attention with learned position embeddings for thread order. The post is the query; root and parent are keys/values.
+Encodes target tweet, parent, and root separately with a **shared** XLM-RoBERTa encoder. The three CLS representations are combined via multi-head self-attention with learned position embeddings for thread order. The tweet is the query; root and parent are keys/values.
 
 ### Cross-Attention
-Token-level context fusion. Post tokens attend to the full token sequence of the concatenated context (root + parent) via stacked cross-attention layers. Captures fine-grained lexical interactions between the post and its thread.
+Token-level context fusion. Tweet tokens attend to the full token sequence of the concatenated context (root + parent) via stacked cross-attention layers. Captures fine-grained lexical interactions between the tweet and its thread.
 
 ### BT-Augmented
 Same architecture as Hierarchical, but trained on a back-translation-augmented dataset — training samples are paraphrased via Spanish → English → Spanish translation to expand the training set.
@@ -100,6 +99,7 @@ Same architecture as Hierarchical, but trained on a back-translation-augmented d
 │   └── metrics.py                    # Metric utilities
 ├── analysis/
 │   ├── visualize.py                  # Plot F1/accuracy across seeds and models
+│   ├── visualize_loss.py             # loss curves  
 │   ├── attention_report.py           # Per-example attention weight report
 │   ├── integrated_gradient.py        # IG-based token attribution
 │   ├── interpretability_extended.py  # Thread-level and token-level attention distributions
@@ -108,7 +108,7 @@ Same architecture as Hierarchical, but trained on a back-translation-augmented d
 │   └── print_test_samples.py         # Browse test set to stdout
 └── utils/
     ├── imbalance.py                  # Class weights and oversampling
-    └── inference_utils.py            # Encoding helpers, model loaders
+    └── inference_utils.py            
 ```
 
 ---
@@ -181,11 +181,16 @@ All scripts in `analysis/` are standalone. Each file has its full run command at
 
 `interpretability_extended.py`: Attention distributions
 
-Thread-level attention weights for Hierarchical and BT-Augmented and context segment importance for Cross-Attention, split by class (stereotype vs non-stereotype).
+Runs inference on the full test set and extracts attention weights from the hierarchical and cross-attention models. Produces:
+
+- **Bar charts** of mean attention weights per thread position (root / parent / target tweet) split by class, for the hierarchical model
+- **Violin plots** of attention weight distributions across all test samples for both models
+- **Cross-attention segment importance** — for each sample, computes the fraction of attention allocated to the root vs parent portion of the context, using layer 1 weights. 
+- **Layer 1 vs Layer 2 comparison** — attention shift between the two cross-attention layers
 
 `attention_report.py`: Per-example attention report
 
-Plain-text report with per-example predictions and attention weights for all models. Use `--tweet_indices` to inspect specific samples.
+Generates a plain-text report combining predictions and attention weights from all three models for individual test samples. For the hierarchical model, reports thread position weights (root / parent / target). Use `--tweet_indices` to inspect specific samples by index.
 
 `pick_index.py`: Sample selection for qualitative analysis
 
@@ -211,7 +216,7 @@ python analysis/print_test_samples.py \
 
 `integrated_gradient.py`: Token attribution via Integrated Gradients
 
-Attributes predictions to individual post tokens using [Captum](https://captum.ai/). Outputs bar charts comparing token attributions across models for selected test cases.
+Uses [Captum](https://captum.ai/) to attribute each model's prediction to individual tweet tokens via Integrated Gradients. Context (root + parent) is held fixed while tweet token embeddings are interpolated from a zero baseline. For each selected test case, outputs a side-by-side bar chart of the top-20 tokens by attribution score across the baseline, hierarchical and cross-attention models. Cases can be selected automatically from `inference_per_sample.csv` by verdict, or targeted by index with `--tweet_idx`.
 
 ```bash
 python analysis/integrated_gradient.py \
