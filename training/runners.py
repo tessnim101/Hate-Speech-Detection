@@ -169,34 +169,19 @@ def run_hierarchical(df_train, df_val, df_test, run_id, res_dir, class_weights=N
 
 
 def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
-    """
-    Fine-tune the hierarchical model on a back-translation-augmented training set.
-
-    Back-translated tweets are appended as new training rows with the same labels,
-    expanding the training set (Beddiar et al., 2021). Architecture and evaluation
-    are identical to run_hierarchical — only the training data is larger.
-    level4 (hoax) is intentionally excluded.
-    """
-    if df_train["backtranslated_text"].eq("").all():
-        print("[augmented] 'backtranslated_text' column is empty — "
-              "run translate.py first. Skipping run_augmented.")
-        return
-
+    """Hierarchical model trained on the pre-augmented dataset (twins already in df_train)."""
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["model_name"])
-
-    df_train_aug = augment_with_backtranslation(df_train.copy())
-    df_val_h     = df_val.copy()
 
     train_ds = format_dataset(
         tokenize_hierarchical(
-            prepare_dataset(df_train_aug, ["text", "parent_text", "root_text"]),
+            prepare_dataset(df_train.copy(), ["text", "parent_text", "root_text"]),
             tokenizer, CONFIG["max_len"],
         ),
         "augmented",
     )
     val_ds = format_dataset(
         tokenize_hierarchical(
-            prepare_dataset(df_val_h, ["text", "parent_text", "root_text"]),
+            prepare_dataset(df_val.copy(), ["text", "parent_text", "root_text"]),
             tokenizer, CONFIG["max_len"],
         ),
         "augmented",
@@ -222,7 +207,6 @@ def run_augmented(df_train, df_val, df_test, run_id, res_dir, class_weights=None
             trainer, tokenizer, Path(res_dir) / "best_model_bt"
         ),
     )
-
 
 def run_cross_attention(df_train, df_val, df_test, run_id, res_dir, class_weights=None):
     """
