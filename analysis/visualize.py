@@ -7,7 +7,7 @@ python analysis/visualize.py \
     --results_path_hierarchical "results/results_hierarchical/" \
     --results_path_cross_attention "results/results_cross_attention/" \
     --results_path_augmented    "results/results_augmented/" \
-    --output_path               "results/figures/"
+    --output_path               "figures/"
 """
 
 import argparse

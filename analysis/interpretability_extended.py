@@ -14,7 +14,7 @@ Usage:
         --context_path          results/best_model_hierarchical/ \
         --bt_path               results/best_model_augmented/ \
         --cross_attention_path  results/best_model_cross_attention/ \
-        --results_path         "results/figures/"
+        --results_path         "figures/"
 """
 import sys
 from pathlib import Path
