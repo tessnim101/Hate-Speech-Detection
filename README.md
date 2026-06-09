@@ -253,3 +253,13 @@ All hyperparameters are in [config.py](config.py):
 | `epochs` | 7 | Max training epochs |
 | `early_stopping_patience` | 3 | Early stopping patience |
 | `train_bs` / `eval_bs` | 8 | Batch sizes |
+
+---
+
+## References
+
+- Schmeisser-Nieto et al. (2025) — [StereoHoax: A Dataset for Stereotype Detection in Spanish Social Media](https://arxiv.org/abs/2501.xxxxx)
+- Schmeisser-Nieto et al. (2024) — [DETESTS-Dis: A Dataset for Stereotype Detection in Spanish](https://arxiv.org/abs/2401.xxxxx)
+- Beddiar et al. (2021) — [Data Augmentation for Hate Speech Detection via Back-Translation](https://arxiv.org/abs/2101.xxxxx)
+- Jain & Wallace (2019) — [Attention is not Explanation](https://arxiv.org/abs/1902.10186)
+- Sundararajan et al. (2017) — [Axiomatic Attribution for Deep Networks](https://arxiv.org/abs/1703.01365)
