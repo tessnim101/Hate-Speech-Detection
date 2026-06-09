@@ -179,15 +179,15 @@ The four plots are:
 
 All scripts in `analysis/` are standalone. Each file has its full run command at the top.
 
-`interpretability_extended.py` — Attention distributions
+`interpretability_extended.py`: Attention distributions
 
 Thread-level attention weights for Hierarchical and BT-Augmented and context segment importance for Cross-Attention, split by class (stereotype vs non-stereotype).
 
-`attention_report.py` — Per-example attention report
+`attention_report.py`: Per-example attention report
 
 Plain-text report with per-example predictions and attention weights for all models. Use `--tweet_indices` to inspect specific samples.
 
-`pick_index.py` — Sample selection for qualitative analysis
+`pick_index.py`: Sample selection for qualitative analysis
 
 Browse `inference_per_sample.csv` by verdict, label, and confidence threshold to find interesting cases for IG or attention analysis.
 
@@ -201,7 +201,7 @@ python analysis/pick_index.py \
     --n              10
 ```
 
-`print_test_samples.py` — Browse test set
+`print_test_samples.py`: Browse test set
 
 ```bash
 python analysis/print_test_samples.py \
@@ -209,7 +209,7 @@ python analysis/print_test_samples.py \
     --label 1   # stereotype only
 ```
 
-`integrated_gradient.py` — Token attribution via Integrated Gradients
+`integrated_gradient.py`: Token attribution via Integrated Gradients
 
 Attributes predictions to individual post tokens using [Captum](https://captum.ai/). Outputs bar charts comparing token attributions across models for selected test cases.
 
@@ -225,7 +225,7 @@ python analysis/integrated_gradient.py \
     --tweet_idx            102
 ```
 
-`top_tokens.py` — Most attended context tokens
+`top_tokens.py`: Most attended context tokens
 
 Aggregates cross-attention weights over the test set to investigate which context tokens are most predictive of stereotype vs non-stereotype, ranked by discriminative score.
 
