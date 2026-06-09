@@ -1,14 +1,15 @@
 """
 Inference and analysis script.
 
-Evaluates baseline, hierarchical, and cross-attention models on the test set
-and compares their predictions sample-by-sample.
+Evaluates baseline, hierarchical, cross-attention, and augmented models
+on the test set and compares their predictions sample-by-sample.
 
-python3 inference.py \
-    --dataset_path          "data/spanish_subset/" \
+python inference.py \
+    --dataset_path          "data/spanish_subset_collapsed/" \
     --baseline_path         "results/best_model_baseline/" \
-    --context_path          "results/best_model_context/" \
+    --context_path          "results/best_model_hierarchical/" \
     --cross_attention_path  "results/best_model_cross_attention/" \
+    --augmented_path        "results/best_model_augmented/" \
     --results_path          "results/" \
     --run_id                "0"
 """
@@ -30,7 +31,7 @@ from sklearn.metrics import (
 
 from config import CONFIG
 from data.loader import load_data
-from data.preprocessing import ids_to_text, filter_contextual_tweets
+from data.preprocessing import ids_to_text, filter_contextual_tweets, clean_df
 from utils.inference_utils import enc, load_hierarchical, load_cross_attention
 
 
@@ -40,6 +41,7 @@ def parse_args():
     p.add_argument("--baseline_path",        required=True)
     p.add_argument("--context_path",         required=True)
     p.add_argument("--cross_attention_path", required=True)
+    p.add_argument("--augmented_path",       required=False, default=None)
     p.add_argument("--results_path",         required=True)
     p.add_argument("--batch_size",           type=int, default=32)
     p.add_argument("--run_id",               type=str, default="0")
@@ -76,7 +78,6 @@ def predict_hierarchical(model, tokenizer, df, batch_size, device):
     """
     Batched inference for the hierarchical model.
     Encodes tweet, parent, and root separately.
-    level4 (hoax) is intentionally excluded.
     """
     model.eval()
     all_preds, all_probs = [], []
@@ -91,12 +92,12 @@ def predict_hierarchical(model, tokenizer, df, batch_size, device):
         r_enc = enc(tokenizer, root_texts[i:i+batch_size],   CONFIG["max_len"], device)
 
         out = model(
-            tweet_input_ids=       t_enc["input_ids"],
-            tweet_attention_mask=  t_enc["attention_mask"],
-            parent_input_ids=      p_enc["input_ids"],
-            parent_attention_mask= p_enc["attention_mask"],
             root_input_ids=        r_enc["input_ids"],
             root_attention_mask=   r_enc["attention_mask"],
+            parent_input_ids=      p_enc["input_ids"],
+            parent_attention_mask= p_enc["attention_mask"],
+            tweet_input_ids=       t_enc["input_ids"],
+            tweet_attention_mask=  t_enc["attention_mask"],
         )
 
         logits = out.logits
@@ -112,7 +113,6 @@ def predict_cross_attention(model, tokenizer, df, batch_size, device):
     """
     Batched inference for the cross-attention model.
     Context (root + parent) and tweet are encoded separately.
-    level4 (hoax) is intentionally excluded.
     """
     model.eval()
     all_preds, all_probs = [], []
@@ -178,12 +178,18 @@ def main():
     device = get_device()
     print(f"[device] {device}")
 
-    _, df_test = load_data(args.dataset_path)
-    df_test    = filter_contextual_tweets(df_test)
-    df_test    = ids_to_text(df_test.copy())
-    labels     = df_test["stereotype"].values
+    df_train, df_test = load_data(args.dataset_path)
+    df_train = clean_df(df_train)
+    df_test  = clean_df(df_test)
 
-    # baseline
+    combined = pd.concat([df_train, df_test], ignore_index=True)
+    df_train = ids_to_text(df_train, lookup_df=combined)
+    df_test  = ids_to_text(df_test,  lookup_df=combined)
+    df_train = filter_contextual_tweets(df_train)
+    df_test  = filter_contextual_tweets(df_test)
+
+    labels = df_test["stereotype"].values
+
     print_section("Baseline")
     baseline_tokenizer = AutoTokenizer.from_pretrained(args.baseline_path)
     baseline_model     = AutoModelForSequenceClassification.from_pretrained(
@@ -197,7 +203,6 @@ def main():
     print_metrics(baseline_metrics)
     print(classification_report(labels, baseline_preds, zero_division=0))
 
-    # hierarchical model
     print_section("Hierarchical")
     hier_model, hier_tokenizer = load_hierarchical(args.context_path, device)
 
@@ -208,7 +213,6 @@ def main():
     print_metrics(hier_metrics)
     print(classification_report(labels, hier_preds, zero_division=0))
 
-    # cross-attention model
     print_section("Cross-Attention")
     ca_model, ca_tokenizer = load_cross_attention(args.cross_attention_path, device)
 
@@ -218,10 +222,26 @@ def main():
     ca_metrics = compute_metrics(labels, ca_preds)
     print_metrics(ca_metrics)
     print(classification_report(labels, ca_preds, zero_division=0))
+
+    # Augmented (optional) 
+    aug_preds, aug_probs, aug_metrics = None, None, None
+    if args.augmented_path:
+        print_section("BT-Augmented")
+        aug_model, aug_tokenizer = load_hierarchical(args.augmented_path, device)
+
+        aug_preds, aug_probs = predict_hierarchical(
+            aug_model, aug_tokenizer, df_test, args.batch_size, device,
+        )
+        aug_metrics = compute_metrics(labels, aug_preds)
+        print_metrics(aug_metrics)
+        print(classification_report(labels, aug_preds, zero_division=0))
+
     print_section("Deltas vs Baseline")
     for k in ["accuracy", "f1_macro", "f1_class0", "f1_class1"]:
         print(f"  {'Hierarchical':<20} {k:<15} {hier_metrics[k] - baseline_metrics[k]:+.4f}")
         print(f"  {'Cross-Attention':<20} {k:<15} {ca_metrics[k]  - baseline_metrics[k]:+.4f}")
+        if aug_metrics:
+            print(f"  {'BT-Augmented':<20} {k:<15} {aug_metrics[k] - baseline_metrics[k]:+.4f}")
 
     df_results = df_test[["text", "stereotype"]].copy()
 
@@ -232,10 +252,18 @@ def main():
     df_results["ca_pred"]          = ca_preds
     df_results["ca_prob1"]         = ca_probs[:, 1]
 
+    if aug_preds is not None:
+        df_results["aug_pred"]  = aug_preds
+        df_results["aug_prob1"] = aug_probs[:, 1]
+
     df_results["baseline_correct"] = (baseline_preds == labels).astype(int)
     df_results["hier_correct"]     = (hier_preds     == labels).astype(int)
     df_results["ca_correct"]       = (ca_preds       == labels).astype(int)
 
+    if aug_preds is not None:
+        df_results["aug_correct"] = (aug_preds == labels).astype(int)
+
+    # Verdict: cross-attention vs baseline
     df_results["verdict"] = "tie"
     df_results.loc[
         (df_results["ca_correct"] == 1) & (df_results["baseline_correct"] == 0),
@@ -258,9 +286,12 @@ def main():
 
     rows = [
         {"run_id": args.run_id, "model": "baseline",        **baseline_metrics},
-        {"run_id": args.run_id, "model": "context",         **hier_metrics},
+        {"run_id": args.run_id, "model": "hierarchical",    **hier_metrics},
         {"run_id": args.run_id, "model": "cross_attention", **ca_metrics},
     ]
+    if aug_metrics:
+        rows.append({"run_id": args.run_id, "model": "augmented", **aug_metrics})
+
     summary_df   = pd.DataFrame(rows)
     summary_path = res_dir / "inference_summary.csv"
     file_exists  = summary_path.exists()

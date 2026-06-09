@@ -4,6 +4,7 @@ Training configuration.
 
 CONFIG = {
     "model_name":    "xlm-roberta-base",
+    "seed": 42, # default , gets overridden
     "max_len":       192,
     "max_len_context": 256,   # context for cross-attention model
     "max_len_tweet": 128,     # tweet for cross-attention model
@@ -13,7 +14,7 @@ CONFIG = {
     "weight_decay":  0.01,    
     "warmup_ratio":  0.1,   
     "max_grad_norm": 1.0,     
-    "epochs":        9,
+    "epochs":        7,
     "early_stopping_patience": 3,
     "output_dir":    "./results",
     "log_dir":       "./logs",
