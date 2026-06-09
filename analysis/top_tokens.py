@@ -5,14 +5,18 @@ Aggregates cross-attention weights across the test set and identifies
 which context tokens (root, parent) the model attends to most,
 split by class. Outputs ranked lists and bar charts.
 
-python top_tokens.py \
-    --dataset_path         "data/spanish_subset/" \
+python analysis/top_tokens.py \
+    --dataset_path         "data/spanish_subset_collapsed/" \
     --cross_attention_path "results/best_model_cross_attention/" \
     --results_path         "figures/" \
-    --top_k                20
+    --top_k                30
 """
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
 
 import argparse
 from collections import defaultdict
@@ -25,7 +29,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from data.loader import load_data
-from data.preprocessing import filter_contextual_tweets, ids_to_text
+from data.preprocessing import filter_contextual_tweets, ids_to_text, clean_df
 from config import CONFIG
 from utils.inference_utils import enc, load_cross_attention
 
@@ -49,6 +53,7 @@ def parse_args():
 def extract_attention(model, tokenizer, df, batch_size, device):
     """
     Run inference and collect averaged context token attention weights.
+    Uses layer 1 (raw attention) from the cross-attention stack.
 
     Returns:
         all_weights:  list of (ctx_len,) arrays — averaged across heads and tweet tokens
@@ -82,8 +87,9 @@ def extract_attention(model, tokenizer, df, batch_size, device):
             return_attention_weights=True,
         )
 
-        # (B, num_heads, tweet_len, ctx_len) → avg heads + tweet tokens → (B, ctx_len)
-        avg   = out["attention_weights"].cpu().numpy().mean(axis=1).mean(axis=1)
+        # out["attention_weights"] is a list of 2 tensors (B, heads, tweet_len, ctx_len)
+        # use layer 1 (raw attention) — avg heads + tweet tokens → (B, ctx_len)
+        avg   = out["attention_weights"][0].cpu().numpy().mean(axis=1).mean(axis=1)
         preds = out.logits.argmax(dim=-1).cpu().tolist()
 
         all_weights.extend(list(avg))
@@ -111,7 +117,11 @@ def aggregate_top_tokens(all_weights, all_ctx_ids, labels, tokenizer, top_k):
         tokens = tokenizer.convert_ids_to_tokens(ctx_ids)
         for token, weight in zip(tokens, weights):
             clean = token.replace("▁", "").strip().lower()
-            if clean in SKIP_TOKENS or clean in SPANISH_STOPWORDS or len(clean) < 3:
+            if clean in SKIP_TOKENS \
+                or clean in SPANISH_STOPWORDS \
+                or clean.isdigit() or len(clean) < 4 \
+                or not token.startswith("▁") \
+                or clean in {"url", "URL"}:
                 continue
             class_token_attn[label][token] += weight
         class_counts[label] += 1
@@ -138,7 +148,6 @@ def aggregate_top_tokens(all_weights, all_ctx_ids, labels, tokenizer, top_k):
     }, class_counts
 
 
-# plots 
 def plot_top_tokens(top_tokens, class_counts, top_k, out_dir):
     fig, axes = plt.subplots(1, 2, figsize=(14, max(6, top_k * 0.4)))
     fig.suptitle(
@@ -174,36 +183,6 @@ def plot_top_tokens(top_tokens, class_counts, top_k, out_dir):
     plt.close()
 
 
-def plot_top_tokens_comparison(top_tokens, top_k, out_dir):
-    tokens_0 = {t: s for t, s in top_tokens[0]}
-    tokens_1 = {t: s for t, s in top_tokens[1]}
-    common    = set(tokens_0.keys()) & set(tokens_1.keys())
-
-    fig, ax = plt.subplots(figsize=(8, 8))
-
-    for token in set(tokens_0.keys()) | set(tokens_1.keys()):
-        x, y   = tokens_0.get(token, 0), tokens_1.get(token, 0)
-        color  = "#e74c3c" if token in common else ("#4C72B0" if token in tokens_0 else "#DD8452")
-        ax.scatter(x, y, color=color, s=60 if token in common else 40,
-                   alpha=1.0 if token in common else 0.7, zorder=3 if token in common else 2)
-        ax.annotate(token, (x, y), fontsize=7.5 if token in common else 7,
-                    xytext=(4, 4), textcoords="offset points", color=color)
-
-    ax.set_xlabel("Mean attention — Class 0 (not stereotype)", fontsize=10)
-    ax.set_ylabel("Mean attention — Class 1 (stereotype)",     fontsize=10)
-    ax.set_title("Token Attention: Class 0 vs Class 1\n(red = appears in both top lists)",
-                 fontsize=11, fontweight="bold")
-    ax.plot([0, ax.get_xlim()[1]], [0, ax.get_xlim()[1]], "k--", alpha=0.2, linewidth=1)
-    ax.grid(linestyle="--", alpha=0.3)
-    ax.spines[["top", "right"]].set_visible(False)
-
-    plt.tight_layout()
-    out = Path(out_dir) / "cross_attn_token_comparison.png"
-    plt.savefig(out, dpi=150, bbox_inches="tight")
-    print(f"[saved] {out}")
-    plt.close()
-
-
 def save_csv(top_tokens, out_dir):
     rows = [
         {"class": lbl, "class_name": name, "rank": rank, "token": token, "mean_attn": round(score, 6)}
@@ -229,11 +208,15 @@ def main():
 
     out_dir = Path(args.results_path)
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    _, df_test = load_data(args.dataset_path)
-    df_test    = filter_contextual_tweets(df_test)
-    df_test    = ids_to_text(df_test.copy())
-    labels     = df_test["stereotype"].values
+ 
+    df_train, df_test = load_data(args.dataset_path)
+    df_train = clean_df(df_train)
+    df_test  = clean_df(df_test)
+    combined = pd.concat([df_train, df_test], ignore_index=True)
+    df_train = ids_to_text(df_train, lookup_df=combined)
+    df_test  = ids_to_text(df_test,  lookup_df=combined)
+    df_test  = filter_contextual_tweets(df_test)
+    labels   = df_test["stereotype"].values
     print(f"[data] Test set: {len(df_test)} samples")
 
     print("[loading] Cross-Attention model...")
@@ -254,7 +237,6 @@ def main():
     print_summary(top_tokens, args.top_k)
 
     plot_top_tokens(top_tokens, class_counts, args.top_k, out_dir)
-    plot_top_tokens_comparison(top_tokens, args.top_k, out_dir)
     save_csv(top_tokens, out_dir)
 
     print(f"\nDone. All outputs saved to {out_dir}")

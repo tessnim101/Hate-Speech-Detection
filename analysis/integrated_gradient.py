@@ -4,17 +4,20 @@ Integrated Gradients interpretability analysis.
 Runs IG on tweet tokens across baseline, hierarchical, and cross-attention
 models on case studies drawn from inference_per_sample.csv.
 
-python3 token_attention.py \
-    --dataset_path          "data/spanish_subset/" \
+python analysis/integrated_gradient.py \
+    --dataset_path          "data/spanish_subset_collapsed/" \
     --baseline_path         "results/best_model_baseline/" \
-    --context_path          "results/best_model_context/" \
+    --context_path          "results/best_model_hierarchical/" \
     --cross_attention_path  "results/best_model_cross_attention/" \
     --results_path          "figures/" \
     --per_sample            "results/inference_per_sample.csv" \
-    --tweet_idx             318
+    --tweet_idx             599
 """
 
 from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
 
 import argparse
 from pathlib import Path
@@ -24,13 +27,14 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
-from transformers import AutoModelForSequenceClassification
-
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import nltk
+SPANISH_STOPWORDS = set(nltk.corpus.stopwords.words("spanish"))
 from captum.attr import IntegratedGradients
 
 from config import CONFIG
 from data.loader import load_data
-from data.preprocessing import filter_contextual_tweets, ids_to_text
+from data.preprocessing import filter_contextual_tweets, ids_to_text, clean_df
 from utils.inference_utils import enc, load_hierarchical, load_cross_attention
 
 
@@ -50,7 +54,6 @@ def parse_args():
 
 
 def load_baseline(path, device):
-    from transformers import AutoTokenizer
     model     = AutoModelForSequenceClassification.from_pretrained(path).to(device).eval()
     tokenizer = AutoTokenizer.from_pretrained(path)
     return model, tokenizer
@@ -70,7 +73,12 @@ class BaselineIGWrapper(nn.Module):
 
 
 class HierarchicalIGWrapper(nn.Module):
-    """IG on tweet embeddings; root and parent are held fixed."""
+    """
+    IG on tweet embeddings; root and parent are held fixed.
+    Matches HierarchicalContextModel.forward exactly:
+      - encode uses CLS token (last_hidden_state[:, 0, :])
+      - tweet queries the full thread via thread_attention
+    """
 
     def __init__(self, model):
         super().__init__()
@@ -78,28 +86,41 @@ class HierarchicalIGWrapper(nn.Module):
 
     def forward(
         self,
-        tweet_embeds,  tweet_mask,
-        root_ids,      root_mask,
-        parent_ids,    parent_mask,
+        tweet_embeds,
+        tweet_mask,
+        root_ids,
+        root_mask,
+        parent_ids,
+        parent_mask,
     ):
-        from modeling.models import mean_pool
+        # Encode root and parent via CLS (matches model.encode)
+        root_repr   = self.model.encoder(
+            input_ids=root_ids, attention_mask=root_mask
+        ).last_hidden_state[:, 0, :]  # (B, H)
 
-        root_repr   = self.model.encode(root_ids,   root_mask)
-        parent_repr = self.model.encode(parent_ids, parent_mask)
+        parent_repr = self.model.encoder(
+            input_ids=parent_ids, attention_mask=parent_mask
+        ).last_hidden_state[:, 0, :]  # (B, H)
 
-        tweet_out  = self.model.encoder(inputs_embeds=tweet_embeds, attention_mask=tweet_mask)
-        tweet_repr = mean_pool(tweet_out.last_hidden_state, tweet_mask)
+        # Encode tweet via embeddings (for IG) then CLS
+        tweet_out  = self.model.encoder(
+            inputs_embeds=tweet_embeds, attention_mask=tweet_mask
+        )
+        tweet_repr = tweet_out.last_hidden_state[:, 0, :]  # (B, H) — CLS
 
+        # Thread assembly with position embeddings
         positions = torch.arange(3, device=tweet_repr.device)
-        pos_emb   = self.model.position_embeddings(positions).unsqueeze(0)
+        pos_emb   = self.model.position_embeddings(positions).unsqueeze(0)  # (1, 3, H)
         thread    = torch.stack([root_repr, parent_repr, tweet_repr], dim=1) + pos_emb
 
+        # Padding mask
         root_empty   = (root_mask.sum(dim=1)   <= 2)
         parent_empty = (parent_mask.sum(dim=1) <= 2)
         tweet_empty  = torch.zeros(root_empty.shape[0], dtype=torch.bool,
                                    device=tweet_repr.device)
         key_padding_mask = torch.stack([root_empty, parent_empty, tweet_empty], dim=1)
 
+        # Tweet queries the full thread
         attn_out, _ = self.model.thread_attention(
             query=thread[:, 2:, :],
             key=thread, value=thread,
@@ -112,15 +133,17 @@ class HierarchicalIGWrapper(nn.Module):
 
 
 class CrossAttentionIGWrapper(nn.Module):
-    """IG on tweet embeddings; context IDs are held fixed."""
+    """
+    IG on tweet embeddings; context IDs are held fixed.
+    Matches CrossAttentionContextModel.forward exactly:
+      - pooling uses CLS token (enriched[:, 0, :])
+    """
 
     def __init__(self, model):
         super().__init__()
         self.model = model
 
     def forward(self, tweet_embeds, tweet_mask, ctx_ids, ctx_mask):
-        from modeling.models import mean_pool
-
         context_tokens       = self.model.encode(ctx_ids, ctx_mask)
         ctx_key_padding_mask = (ctx_mask == 0)
 
@@ -140,8 +163,10 @@ class CrossAttentionIGWrapper(nn.Module):
             enriched = layer["norm1"](enriched + attended)
             enriched = layer["norm2"](enriched + layer["ffn"](enriched))
 
-        pooled = mean_pool(enriched, tweet_mask)
+        # CLS token — matches model.forward
+        pooled = enriched[:, 0, :]  # (B, H)
         return self.model.classifier(pooled)
+
 
 
 def get_embeddings(model, model_type, input_ids):
@@ -171,6 +196,8 @@ def compute_ig(wrapper, input_embeds, additional_args, target_class, n_steps):
     return attrs.sum(dim=-1).squeeze(0).detach().cpu().numpy()
 
 
+# Case study IG 
+
 def run_ig_case_studies(
     baseline_model,  baseline_tokenizer,
     hier_model,      hier_tokenizer,
@@ -188,16 +215,18 @@ def run_ig_case_studies(
         label   = int(row["stereotype"])
         verdict = row.get("verdict", "")
 
-        # Baseline
+        # Baseline 
         b_enc    = enc(baseline_tokenizer, [tweet], CONFIG["max_len"], device)
         b_embeds = get_embeddings(baseline_model, "baseline", b_enc["input_ids"])
         b_embeds = b_embeds.detach().requires_grad_(True)
-        b_imp    = compute_ig(b_wrapper, b_embeds,
-                              additional_args=(b_enc["attention_mask"],),
-                              target_class=label, n_steps=n_steps)
+        b_imp    = compute_ig(
+            b_wrapper, b_embeds,
+            additional_args=(b_enc["attention_mask"],),
+            target_class=label, n_steps=n_steps,
+        )
         b_tokens = baseline_tokenizer.convert_ids_to_tokens(b_enc["input_ids"][0].tolist())
 
-        # Hierarchical
+        # Hierarchical 
         h_enc      = enc(hier_tokenizer, [tweet],                      CONFIG["max_len"], device)
         root_enc   = enc(hier_tokenizer, [row.get("root_text",   "")], CONFIG["max_len"], device)
         parent_enc = enc(hier_tokenizer, [row.get("parent_text", "")], CONFIG["max_len"], device)
@@ -215,7 +244,7 @@ def run_ig_case_studies(
         )
         h_tokens = hier_tokenizer.convert_ids_to_tokens(h_enc["input_ids"][0].tolist())
 
-        # Cross-attention
+        # Cross-Attention 
         context = hier_tokenizer.sep_token.join(
             x for x in [row.get("root_text", ""), row.get("parent_text", "")]
             if x and str(x).strip()
@@ -255,10 +284,10 @@ def plot_ig_comparison(ig_results, out_dir):
     model_labels = ["Baseline", "Hierarchical", "Cross-Attention"]
     model_colors = ["#6C8EBF", "#D4763B", "#55A868"]
     skip         = {"<s>", "</s>", "<pad>"}
-    top_k        = 10
+    top_k        = 20
 
     for idx, result in enumerate(ig_results):
-        fig, axes = plt.subplots(1, 3, figsize=(16, 6))
+        fig, axes = plt.subplots(1, 3, figsize=(16, 8))
 
         root   = result.get("root_text",   "N/A")[:80]
         parent = result.get("parent_text", "N/A")[:80]
@@ -275,8 +304,17 @@ def plot_ig_comparison(ig_results, out_dir):
             tokens     = result[key]["tokens"]
             importance = result[key]["importance"]
 
-            filtered = [(t, s) for t, s in zip(tokens, importance) if t not in skip]
+            filtered = [
+                (t, s) for t, s in zip(tokens, importance)
+                if t not in skip
+                and t.startswith("▁")
+                and len(t.replace("▁", "").strip()) >= 3
+                and t.replace("▁", "").strip().lower() not in SPANISH_STOPWORDS
+                and not t.replace("▁", "").strip().isdigit()
+            ]
+
             if not filtered:
+                ax.set_title(f"{mlabel}\n(no tokens after filtering)", fontsize=10)
                 continue
 
             tokens_f, scores_f = zip(*filtered)
@@ -315,9 +353,14 @@ def main():
     out_dir = Path(args.results_path)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    _, df_test = load_data(args.dataset_path)
-    df_test    = filter_contextual_tweets(df_test)
-    df_test    = ids_to_text(df_test.copy())
+    # Data loading — must match training preprocessing
+    df_train, df_test = load_data(args.dataset_path)
+    df_train = clean_df(df_train)
+    df_test  = clean_df(df_test)
+    combined = pd.concat([df_train, df_test], ignore_index=True)
+    df_train = ids_to_text(df_train, lookup_df=combined)
+    df_test  = ids_to_text(df_test,  lookup_df=combined)
+    df_test  = filter_contextual_tweets(df_test)
 
     print("[loading] Baseline...")
     baseline_model, baseline_tokenizer = load_baseline(args.baseline_path, device)
@@ -346,7 +389,7 @@ def main():
             per_sample[per_sample["verdict"] == "baseline_wins"].head(args.n_cases),
         ]).reset_index(drop=True)
 
-    print(f"\n[IG] Running integrated gradients on {len(cases)} cases (n_steps={args.ig_steps})...")
+    print(f"\n[IG] Running on {len(cases)} cases (n_steps={args.ig_steps})...")
     ig_results = run_ig_case_studies(
         baseline_model, baseline_tokenizer,
         hier_model,     hier_tokenizer,
