@@ -239,6 +239,21 @@ python analysis/top_tokens.py \
 
 ---
 
+## Figures
+
+Generated figures from all analysis scripts are available in `figures/`:
+
+- **`model_comparison.png`** — bar charts and validation curves comparing all four models across seeds (mean ± std)
+- **`loss_curves.png`** — training and validation loss curves per model with ± std band across seeds
+- **`attention_by_class_hierarchical.png`** / **`attention_by_class_cross-attention.png`** — mean attention weights split by class (stereotype vs non-stereotype)
+- **`attention_distribution_hierarchical.png`** / **`attention_distribution_cross-attention.png`** — violin plots of attention weight distributions across all test samples
+- **`cross_attention_layer_comparison.png`** — layer 1 vs layer 2 attention shift in the cross-attention model
+- **`cross_attn_top_tokens.png`** / **`cross_attn_top_tokens.csv`** — most attended context tokens ranked by discriminative score, split by class
+- **`ig_comparison_case_{index}*.png`** — Integrated Gradients attribution plots for selected test cases, comparing token-level attributions across all three models side by side. Cases include both context-win samples (where context resolves implicit stereotyping) and baseline-win samples (where context misleads the model)
+- **`attention_report.txt`** — per-example attention weights and predictions for all models across the test set
+
+---
+
 ## Configuration
 
 All hyperparameters are in [config.py](config.py):
