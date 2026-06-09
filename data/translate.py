@@ -1,80 +1,121 @@
+import argparse
+import shutil
+from pathlib import Path
+
 import pandas as pd
-import argostranslate.package
-import argostranslate.translate
+import torch
+from transformers import MarianMTModel, MarianTokenizer
 from tqdm import tqdm
 
-INPUT_DIR      = "data/spanish_subset_collapsed/"
-SPANISH_COLUMN = "text"
-ID_COLUMN      = "comment_id"
+TEXT_COL, ID_COL = "text", "comment_id"
+PARENT_COL, ROOT_COL = "level2", "level3"
 
 
-def setup_translation():
-    """Download and install the ES→EN and EN→ES models (runs once)."""
-    print("Checking/updating translation package index...")
-    argostranslate.package.update_package_index()
-    available = argostranslate.package.get_available_packages()
-
-    for from_code, to_code in [("es", "en"), ("en", "es")]:
-        pkg = next(
-            (p for p in available if p.from_code == from_code and p.to_code == to_code),
-            None,
-        )
-        if pkg is None:
-            raise RuntimeError(f"{from_code}→{to_code} package not found.")
-        print(f"Installing {from_code}→{to_code} model...")
-        argostranslate.package.install_from_path(pkg.download())
-
-    print("Translation models ready.\n")
+def load_model(src: str, tgt: str, device: str):
+    name = f"Helsinki-NLP/opus-mt-{src}-{tgt}"
+    print(f"  Loading {name}...")
+    tok   = MarianTokenizer.from_pretrained(name)
+    model = MarianMTModel.from_pretrained(name).to(device)
+    model.eval()
+    return tok, model
 
 
-def translate_text(text, translator):
-    """Translate a single cell; return original on failure."""
-    try:
-        if pd.isna(text) or str(text).strip() == "":
-            return ""
-        return translator.translate(str(text).strip())
-    except Exception as e:
-        print(f"Could not translate: '{str(text)[:40]}...' → {e}")
-        return text
+def translate_batch(texts, tok, model, device, max_len):
+    inputs = tok(texts, return_tensors="pt", padding=True,
+                 truncation=True, max_length=max_len).to(device)
+    with torch.no_grad():
+        out = model.generate(**inputs, max_length=max_len)
+    return tok.batch_decode(out, skip_special_tokens=True)
 
 
-def back_translate_split(split: str) -> None:
-    """
-    Load <split>.csv, produce <split>_bt.csv with two new columns:
-      - english_translation   (ES→EN)
-      - backtranslated_text   (ES→EN→ES)
+def back_translate(texts, es_en, en_es, device, batch_size, max_len):
+    """Deduplicated ES->EN->ES back-translation. Preserves input order/length."""
+    es_en_tok, es_en_model = es_en
+    en_es_tok, en_es_model = en_es
 
-    Only comment_id and backtranslated_text are written to the output file
-    so it can be joined back to the main dataset on comment_id.
-    """
-    input_path  = INPUT_DIR + f"{split}.csv"
-    output_path = INPUT_DIR + f"{split}_bt.csv"
+    unique = [t for t in dict.fromkeys(texts) if isinstance(t, str) and t.strip()]
+    print(f"    {len(unique)} unique texts (from {len(texts)} total)")
 
-    print(f"\n--- Processing {input_path} ---")
-    df = pd.read_csv(input_path)
-    print(f"{len(df)} rows loaded from '{SPANISH_COLUMN}' column.\n")
+    en_map = {}
+    for i in tqdm(range(0, len(unique), batch_size), desc="ES->EN"):
+        batch = unique[i:i + batch_size]
+        en_map.update(zip(batch, translate_batch(batch, es_en_tok, es_en_model, device, max_len)))
 
-    es_en = argostranslate.translate.get_translation_from_codes("es", "en")
-    en_es = argostranslate.translate.get_translation_from_codes("en", "es")
+    unique_en = list(dict.fromkeys(en_map.values()))
+    es_map = {}
+    for i in tqdm(range(0, len(unique_en), batch_size), desc="EN->ES"):
+        batch = unique_en[i:i + batch_size]
+        es_map.update(zip(batch, translate_batch(batch, en_es_tok, en_es_model, device, max_len)))
 
-    tqdm.pandas(desc=f"[{split}] ES→EN")
-    df["english_translation"] = df[SPANISH_COLUMN].progress_apply(
-        lambda x: translate_text(x, es_en)
-    )
+    lookup = {orig: es_map[en_map[orig]] for orig in unique}
+    return [lookup.get(t, t) if isinstance(t, str) and t.strip() else "" for t in texts]
 
-    tqdm.pandas(desc=f"[{split}] EN→ES (back)")
-    df["backtranslated_text"] = df["english_translation"].progress_apply(
-        lambda x: translate_text(x, en_es)
-    )
 
-    df[[ID_COLUMN, "backtranslated_text"]].to_csv(output_path, index=False)
-    print(f"\nSaved {len(df)} rows to {output_path}")
-    print(df[[SPANISH_COLUMN, "english_translation", "backtranslated_text"]].head(3).to_string())
+def remap_id(x: str) -> str:
+    """Point a twin's parent/root at the parent/root twin; keep the '0' sentinel."""
+    x = str(x)
+    return x if x == "0" else f"{x}_bt"
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--data_dir",   default="data/spanish_subset_collapsed/")
+    p.add_argument("--out_dir",    default="data/spanish_subset_collapsed_aug/")
+    p.add_argument("--batch_size", type=int, default=64)
+    p.add_argument("--max_len",    type=int, default=128)
+    p.add_argument("--device",     default="cuda" if torch.cuda.is_available() else "cpu")
+    return p.parse_args()
 
 
 def main():
-    setup_translation()
-    back_translate_split("train")
+    args = parse_args()
+    print(f"[device] {args.device}")
+
+    data_dir = Path(args.data_dir)
+    # Read exactly like main.py does (raw), so original rows stay byte-identical.
+    raw_train = pd.read_csv(data_dir / "train.csv")
+    raw_test  = pd.read_csv(data_dir / "test.csv")
+    print(f"Loaded {len(raw_train)} train / {len(raw_test)} test rows")
+
+    # One translation pass over the full corpus, keyed by comment_id.
+    corpus = (pd.concat([raw_train, raw_test], ignore_index=True)
+                .drop_duplicates(subset=ID_COL, keep="first").reset_index(drop=True))
+    print(f"Corpus: {len(corpus)} unique comments")
+
+    print("\nLoading translation models...")
+    es_en = load_model("es", "en", args.device)
+    en_es = load_model("en", "es", args.device)
+
+    print(f"\nBack-translating: {TEXT_COL}")
+    bt = back_translate(corpus[TEXT_COL].fillna("").tolist(),
+                        es_en, en_es, args.device, args.batch_size, args.max_len)
+    bt_map = dict(zip(corpus[ID_COL].astype(str), bt))
+
+    # Build twins from TRAIN comments only.
+    twins = raw_train.copy()
+    twins[ID_COL] = twins[ID_COL].astype(str)
+    twins[TEXT_COL] = twins[ID_COL].map(bt_map).fillna("")
+    twins = twins[twins[TEXT_COL].str.strip() != ""].copy()
+    twins[PARENT_COL] = twins[PARENT_COL].astype(str).map(remap_id)
+    twins[ROOT_COL]   = twins[ROOT_COL].astype(str).map(remap_id)
+    twins[ID_COL]     = twins[ID_COL] + "_bt"
+
+    # Originals as strings so ids line up with twin ids after concat.
+    base = raw_train.copy()
+    for c in (ID_COL, PARENT_COL, ROOT_COL):
+        base[c] = base[c].astype(str)
+
+    aug = pd.concat([base, twins], ignore_index=True)
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    aug.to_csv(out_dir / "train.csv", index=False)
+    shutil.copy(data_dir / "test.csv", out_dir / "test.csv")  # test unchanged
+
+    print(f"\n[saved] {out_dir/'train.csv'}  ({len(base)} originals + {len(twins)} twins = {len(aug)})")
+    print(f"[saved] {out_dir/'test.csv'}  (copied unchanged)")
+    print(f"\nRun:  python main.py --dataset_path {out_dir}/ --results_path results/ "
+          f"--imbalance_strategy class_weights")
 
 
 if __name__ == "__main__":
