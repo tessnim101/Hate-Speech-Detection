@@ -34,6 +34,7 @@ def clean_text(text: str, remove_stopwords: bool = False) -> str:
 
     text = text.lower()
     text = re.sub(r"http\S+|www\S+", "", text)           # URLs
+    text = re.sub(r"\burl\b", "", text, flags=re.IGNORECASE) 
     text = re.sub(r"@\w+", "", text)                      # mentions
     text = re.sub(r"#(\w+)", r"\1", text)                 # hashtags → word
     text = text.translate(str.maketrans("", "", string.punctuation))  # punctuation
@@ -60,7 +61,7 @@ def filter_contextual_tweets(df):
     """
     Keep only tweets that have both a parent and a root tweet.
 
-    Tweets without context (level2 == 0 or level3 == 0) are dropped so that
+    Tweets without context (level2 == "" or level3 == "") are dropped so that
     the baseline and hierarchical models are evaluated on the same population.
     """
     before = len(df)
@@ -91,9 +92,18 @@ def split_train_validation(df, val_size=0.2):
 
 
 # Context resolution
-def ids_to_text(df):
-    """Replace parent and root tweet ids with their actual text."""
-    id_to_text = df[["comment_id", "text"]].rename(
+def ids_to_text(df, lookup_df=None):
+    """
+    Replace parent and root tweet ids with their actual text.
+
+    Args:
+        df:        DataFrame to add parent_text / root_text columns to.
+        lookup_df: DataFrame to build the id→text lookup from. Defaults to df
+                   itself, but should be the full unfiltered dataset so that
+                   parent/root tweets removed by filtering are still found.
+    """
+    source = lookup_df if lookup_df is not None else df
+    id_to_text = source[["comment_id", "text"]].rename(
         columns={"comment_id": "lookup_id", "text": "lookup_text"}
     )
 
@@ -217,3 +227,21 @@ def augment_with_backtranslation(df):
     augmented = pd.concat([df, bt_rows], ignore_index=True)
     print(f"[augment] Added {len(bt_rows):,} back-translated rows → {len(augmented):,} total.")
     return augmented
+
+
+# used for inference 
+def filter_resolved_context(df):
+    """
+    Drop tweets where parent or root text could not be resolved.
+    This happens when the referenced tweet exists in level2/level3
+    but is not present in the dataset.
+    """
+    before = len(df)
+    df = df[
+        (df["parent_text"].str.strip() != "") &
+        (df["root_text"].str.strip()   != "")
+    ].reset_index(drop=True)
+    after = len(df)
+    print(f"[filter] Kept {after:,} / {before:,} tweets with resolved context "
+          f"({before - after:,} dropped).")
+    return df
