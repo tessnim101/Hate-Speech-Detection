@@ -44,7 +44,7 @@ class HierarchicalContextModel(nn.Module):
         self,
         model_name:      str,
         num_labels:      int   = 2,
-        dropout:         float = 0.2,
+        dropout:         float = 0.3,
         use_soft_labels: bool  = False,
     ):
         super().__init__()
@@ -155,7 +155,7 @@ class CrossAttentionContextModel(nn.Module):
         hidden_dim:       int   = 384,
         num_heads:        int   = 8,
         num_cross_layers: int   = 2,
-        dropout:          float = 0.2,
+        dropout:          float = 0.3,
         use_soft_labels:  bool  = False,
     ) -> None:
         super().__init__()
@@ -214,7 +214,7 @@ class CrossAttentionContextModel(nn.Module):
 
         context_key_padding_mask = (context_attention_mask == 0)  # (B, ctx_len)
 
-        last_attn_weights = None
+        all_attn_weights = []
         enriched = tweet_tokens
 
         for layer in self.cross_layers:
@@ -228,7 +228,8 @@ class CrossAttentionContextModel(nn.Module):
             )
             enriched = layer["norm1"](enriched + attended)
             enriched = layer["norm2"](enriched + layer["ffn"](enriched))
-            last_attn_weights = attn_weights
+            if return_attention_weights:
+                all_attn_weights.append(attn_weights)  # (B, heads, tweet_len, ctx_len)
 
         # CLS token for classification
         pooled = enriched[:, 0, :]  # (B, H)
@@ -244,7 +245,8 @@ class CrossAttentionContextModel(nn.Module):
 
         output = SequenceClassifierOutput(loss=loss, logits=logits)
         if return_attention_weights:
-            output["attention_weights"] = last_attn_weights  # (B, heads, tweet_len, ctx_len)
+            # list of num_cross_layers tensors, each (B, heads, tweet_len, ctx_len)
+            output["attention_weights"] = all_attn_weights
         return output
 
     @torch.no_grad()
